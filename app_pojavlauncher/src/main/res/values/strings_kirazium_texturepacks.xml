@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="texture_packs_menu">Texture Packleri</string>
+    <string name="texture_packs_title">Texture Packleri</string>
+    <string name="texture_packs_subtitle">Kirazium ile uyumlu paketleri keşfet</string>
+    <string name="texture_packs_search_hint">Texture pack ara…</string>
+    <string name="texture_packs_search">Ara</string>
+    <string name="texture_packs_loading">Paketler yükleniyor…</string>
+    <string name="texture_packs_empty">Bu aramaya uygun texture pack bulunamadı.</string>
+    <string name="texture_packs_error">Paketler alınamadı. İnternet bağlantını kontrol edip tekrar dene.</string>
+    <string name="texture_pack_downloads">%1$s indirme</string>
+    <string name="texture_pack_download">İndir</string>
+    <string name="texture_pack_downloading">İndiriliyor…</string>
+    <string name="texture_pack_installed">Yüklü</string>
+    <string name="texture_pack_installed_message">%1$s resourcepacks klasörüne indirildi.</string>
+    <string name="texture_pack_already_installed">Bu sürüm zaten yüklü.</string>
+    <string name="texture_pack_no_compatible_version">Bu paketin Kirazium sürümüyle uyumlu indirmesi bulunamadı.</string>
+    <string name="texture_pack_download_failed">Texture pack indirilemedi.</string>
+    <string name="texture_pack_source">Modrinth</string>
+</resources>
