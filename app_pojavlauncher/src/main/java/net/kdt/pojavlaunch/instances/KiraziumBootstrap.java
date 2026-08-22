@@ -17,7 +17,9 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /** Creates and maintains the ready-to-play Kirazium profile. */
 public final class KiraziumBootstrap {
@@ -31,17 +33,24 @@ public final class KiraziumBootstrap {
     private static final String SERVER_ADDRESS = "play.kirazium.com";
     private static final String MODRINTH_VERSION_API =
             "https://api.modrinth.com/v2/project/%s/version?loaders=%%5B%%22fabric%%22%%5D&game_versions=%%5B%%22%s%%22%%5D";
-    private static final String[] PERFORMANCE_MODS = new String[] {
+    private static final String[] CLIENT_MODS = new String[] {
             "fabric-api",
+            "cloth-config",
             "sodium",
             "lithium",
             "ferrite-core",
             "immediatelyfast",
             "entityculling",
-            "sodium-extra"
+            "sodium-extra",
+            "moreculling",
+            "badoptimizations",
+            "krypton",
+            "dynamic-fps",
+            "simple-voice-chat"
     };
-    private static final String BOOTSTRAP_MARKER = ".kirazium-bootstrap-v1";
+    private static final String BOOTSTRAP_MARKER = ".kirazium-bootstrap-v2";
     private static final String LANGUAGE_MARKER = ".kirazium-language-tr-v1";
+    private static final String OPTIMIZATION_MARKER = ".kirazium-low-end-v2";
 
     private KiraziumBootstrap() {
     }
@@ -71,6 +80,7 @@ public final class KiraziumBootstrap {
             ensureServerEntry(gameDirectory);
             ensureLowEndOptions(gameDirectory);
             ensureTurkishLanguage(gameDirectory);
+            ensureLowEndOptimizations(gameDirectory);
             ensurePerformanceMods(gameDirectory);
         } catch (Exception exception) {
             // Do not make the launcher unusable when a third-party download is temporarily unavailable.
@@ -96,7 +106,7 @@ public final class KiraziumBootstrap {
 
         File modsDirectory = new File(gameDirectory, "mods");
         FileUtils.ensureDirectory(modsDirectory);
-        for (String project : PERFORMANCE_MODS) {
+        for (String project : CLIENT_MODS) {
             downloadLatestRelease(project, modsDirectory);
         }
         Tools.write(marker, "game=" + GAME_VERSION + "\nloader=" + FABRIC_LOADER_VERSION + "\n");
@@ -144,7 +154,14 @@ public final class KiraziumBootstrap {
                 "renderDistance:6\n" +
                 "simulationDistance:5\n" +
                 "entityDistanceScaling:0.5\n" +
-                "graphicsMode:0\n" +
+                "graphicsPreset:custom\n" +
+                "ao:false\n" +
+                "renderClouds:false\n" +
+                "entityShadows:false\n" +
+                "cutoutLeaves:false\n" +
+                "improvedTransparency:false\n" +
+                "weatherRadius:5\n" +
+                "menuBackgroundBlurriness:0\n" +
                 "particles:1\n" +
                 "mipmapLevels:2\n" +
                 "biomeBlendRadius:0\n" +
@@ -153,25 +170,59 @@ public final class KiraziumBootstrap {
         Tools.write(options, lowEndDefaults);
     }
 
+    private static void ensureLowEndOptimizations(File gameDirectory) throws IOException {
+        File marker = new File(gameDirectory, OPTIMIZATION_MARKER);
+        if (marker.isFile()) return;
+
+        LinkedHashMap<String, String> defaults = new LinkedHashMap<>();
+        defaults.put("graphicsPreset", "custom");
+        defaults.put("renderDistance", "6");
+        defaults.put("simulationDistance", "5");
+        defaults.put("entityDistanceScaling", "0.5");
+        defaults.put("ao", "false");
+        defaults.put("renderClouds", "false");
+        defaults.put("entityShadows", "false");
+        defaults.put("cutoutLeaves", "false");
+        defaults.put("improvedTransparency", "false");
+        defaults.put("weatherRadius", "5");
+        defaults.put("menuBackgroundBlurriness", "0");
+        defaults.put("particles", "1");
+        defaults.put("mipmapLevels", "2");
+        defaults.put("biomeBlendRadius", "0");
+        defaults.put("maxFps", "60");
+        defaults.put("enableVsync", "false");
+        upsertOptions(new File(gameDirectory, "options.txt"), defaults);
+        Tools.write(marker, "low-end-v2\n");
+    }
+
     private static void ensureTurkishLanguage(File gameDirectory) throws IOException {
         File marker = new File(gameDirectory, LANGUAGE_MARKER);
         if (marker.isFile()) return;
 
         File options = new File(gameDirectory, "options.txt");
+        LinkedHashMap<String, String> language = new LinkedHashMap<>();
+        language.put("lang", "tr_tr");
+        upsertOptions(options, language);
+        Tools.write(marker, "tr_tr\n");
+    }
+
+    private static void upsertOptions(File options, LinkedHashMap<String, String> values) throws IOException {
         String existing = options.isFile() ? Tools.read(options) : "";
         StringBuilder updated = new StringBuilder();
-        boolean replaced = false;
         for (String line : existing.split("\\r?\\n")) {
-            if (line.startsWith("lang:")) {
-                updated.append("lang:tr_tr\n");
-                replaced = true;
-            } else if (!line.isEmpty()) {
+            if (line.isEmpty()) continue;
+            int separator = line.indexOf(':');
+            String key = separator > 0 ? line.substring(0, separator) : line;
+            if (values.containsKey(key)) {
+                updated.append(key).append(':').append(values.remove(key)).append('\n');
+            } else {
                 updated.append(line).append('\n');
             }
         }
-        if (!replaced) updated.append("lang:tr_tr\n");
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            updated.append(entry.getKey()).append(':').append(entry.getValue()).append('\n');
+        }
         Tools.write(options, updated.toString());
-        Tools.write(marker, "tr_tr\n");
     }
 
     private static void ensureServerEntry(File gameDirectory) throws IOException {
