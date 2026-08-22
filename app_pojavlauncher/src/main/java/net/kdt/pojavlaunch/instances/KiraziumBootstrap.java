@@ -18,6 +18,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 /** Creates and maintains the ready-to-play Kirazium profile. */
@@ -74,6 +75,18 @@ public final class KiraziumBootstrap {
         } catch (Exception exception) {
             // Do not make the launcher unusable when a third-party download is temporarily unavailable.
             Log.w(TAG, "Kirazium client preparation will be retried", exception);
+        }
+    }
+
+    /** Re-check the active Kirazium game directory immediately before Minecraft starts. */
+    public static void ensureServerEntry(Instance instance) {
+        if (instance == null || !PROFILE_NAME.equals(instance.name)) return;
+        try {
+            File gameDirectory = instance.getGameDirectory();
+            FileUtils.ensureDirectory(gameDirectory);
+            ensureServerEntry(gameDirectory);
+        } catch (IOException exception) {
+            Log.w(TAG, "Kirazium server entry could not be prepared", exception);
         }
     }
 
@@ -141,7 +154,21 @@ public final class KiraziumBootstrap {
 
     private static void ensureServerEntry(File gameDirectory) throws IOException {
         File serversFile = new File(gameDirectory, "servers.dat");
-        if (serversFile.exists()) return;
+        if (containsServerAddress(serversFile)) return;
+
+        // Minecraft may create an empty servers.dat during its first startup. Preserve any
+        // previous file before replacing it so the launcher never silently destroys user data.
+        if (serversFile.isFile()) {
+            File backup = new File(gameDirectory, "servers.dat.kirazium-backup");
+            int suffix = 1;
+            while (backup.exists()) {
+                backup = new File(gameDirectory, "servers.dat.kirazium-backup-" + suffix++);
+            }
+            if (!serversFile.renameTo(backup)) {
+                throw new IOException("Could not back up existing servers.dat");
+            }
+        }
+
         FileUtils.ensureParentDirectory(serversFile);
         try (DataOutputStream output = new DataOutputStream(new BufferedOutputStream(
                 new GZIPOutputStream(new FileOutputStream(serversFile))))) {
@@ -161,6 +188,26 @@ public final class KiraziumBootstrap {
             output.writeByte(0); // end server compound
             output.writeByte(0); // end root compound
         }
+    }
+
+    private static boolean containsServerAddress(File serversFile) {
+        if (!serversFile.isFile()) return false;
+        byte[] address = SERVER_ADDRESS.getBytes(StandardCharsets.UTF_8);
+        try (GZIPInputStream input = new GZIPInputStream(new java.io.FileInputStream(serversFile))) {
+            int matched = 0;
+            int value;
+            while ((value = input.read()) != -1) {
+                if (value == (address[matched] & 0xff)) {
+                    matched++;
+                    if (matched == address.length) return true;
+                } else {
+                    matched = value == (address[0] & 0xff) ? 1 : 0;
+                }
+            }
+        } catch (IOException exception) {
+            Log.w(TAG, "Existing servers.dat could not be read; it will be backed up", exception);
+        }
+        return false;
     }
 
     private static void writeStringTag(DataOutputStream output, String name, String value) throws IOException {

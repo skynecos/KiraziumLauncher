@@ -13,6 +13,7 @@ import net.kdt.pojavlaunch.LauncherActivity;
 import net.kdt.pojavlaunch.Tools;
 import net.kdt.pojavlaunch.authenticator.accounts.Account;
 import net.kdt.pojavlaunch.instances.Instance;
+import net.kdt.pojavlaunch.instances.KiraziumBootstrap;
 import net.kdt.pojavlaunch.lifecycle.LifecycleAwareAlertDialog;
 import net.kdt.pojavlaunch.multirt.MultiRTUtils;
 import net.kdt.pojavlaunch.multirt.Runtime;
@@ -166,6 +167,7 @@ public class GameRunner {
             }
         }
         File gamedir = instance.getGameDirectory();
+        KiraziumBootstrap.ensureServerEntry(instance);
         JVersionList.Version versionInfo = Tools.getVersionInfo(versionId);
 
         // Switch renderer to GL4ES when running a compat context version on LTW
