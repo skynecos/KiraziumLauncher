@@ -114,6 +114,19 @@ public final class KiraziumBootstrap {
                 LauncherPreferences.DEFAULT_PREF.getBoolean(LOW_GRAPHICS_PREFERENCE, false);
     }
 
+    /** Applies a user-selected RAM value without letting low graphics mode overwrite it at launch. */
+    public static void setRamAllocation(Context context, int megabytes) {
+        if (context == null || LauncherPreferences.DEFAULT_PREF == null) return;
+
+        SharedPreferences.Editor editor = LauncherPreferences.DEFAULT_PREF.edit()
+                .putInt("allocation", megabytes);
+        if (isLowGraphicsModeEnabled()) {
+            editor.putInt(BACKUP_RAM_PREFERENCE, megabytes);
+        }
+        editor.apply();
+        LauncherPreferences.loadPreferences(context);
+    }
+
     /** Enables the aggressive low-device preset while preserving the user's launcher settings. */
     public static void setLowGraphicsMode(Context context, Instance instance, boolean enabled) {
         if (context == null || LauncherPreferences.DEFAULT_PREF == null) return;
@@ -161,7 +174,6 @@ public final class KiraziumBootstrap {
         if (lowGraphics) {
             SharedPreferences preferences = LauncherPreferences.DEFAULT_PREF;
             preferences.edit()
-                    .putInt("allocation", getLowGraphicsRam(context))
                     .putInt("resolutionRatio", 60)
                     .putBoolean("force_vsync", false)
                     .putBoolean("vsync_in_zink", false)

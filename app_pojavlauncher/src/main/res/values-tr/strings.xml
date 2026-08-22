@@ -8,6 +8,9 @@
     <string name="low_graphics_mode_summary">Zayıf telefonlar için maksimum performans</string>
     <string name="low_graphics_enabled">Düşük grafik modu açıldı</string>
     <string name="low_graphics_disabled">Normal grafik ayarları geri yüklendi</string>
+    <string name="ram_control_title">RAM Ayarı</string>
+    <string name="ram_control_summary">Güvenli üst sınır: %1$s</string>
+    <string name="ram_control_saved">RAM %1$s olarak ayarlandı</string>
     <!-- Action bar part -->
     <!-- Languages list part -->
     <!-- Login strings -->

@@ -148,13 +148,87 @@
 					app:layout_constraintTop_toTopOf="parent" />
 			</androidx.constraintlayout.widget.ConstraintLayout>
 
+			<androidx.constraintlayout.widget.ConstraintLayout
+				android:id="@+id/ram_card"
+				android:layout_width="match_parent"
+				android:layout_height="@dimen/_82sdp"
+				android:layout_marginHorizontal="@dimen/_8sdp"
+				android:layout_marginVertical="@dimen/_4sdp"
+				android:background="@drawable/kirazium_low_graphics_card"
+				android:paddingHorizontal="@dimen/_12sdp"
+				app:layout_constraintTop_toBottomOf="@id/low_graphics_card">
+
+				<ImageView
+					android:id="@+id/ram_icon"
+					android:layout_width="@dimen/_26sdp"
+					android:layout_height="@dimen/_26sdp"
+					android:contentDescription="@null"
+					android:src="@drawable/ic_px_ram"
+					app:layout_constraintStart_toStartOf="parent"
+					app:layout_constraintTop_toTopOf="@id/ram_title"
+					app:layout_constraintBottom_toBottomOf="@id/ram_summary" />
+
+				<TextView
+					android:id="@+id/ram_title"
+					android:layout_width="0dp"
+					android:layout_height="wrap_content"
+					android:layout_marginStart="@dimen/_10sdp"
+					android:layout_marginTop="@dimen/_8sdp"
+					android:fontFamily="@font/noto_sans_bold"
+					android:text="@string/ram_control_title"
+					android:textColor="@color/primary_text"
+					android:textSize="@dimen/_12ssp"
+					app:layout_constraintEnd_toStartOf="@id/ram_value"
+					app:layout_constraintStart_toEndOf="@id/ram_icon"
+					app:layout_constraintTop_toTopOf="parent" />
+
+				<TextView
+					android:id="@+id/ram_value"
+					android:layout_width="wrap_content"
+					android:layout_height="wrap_content"
+					android:fontFamily="@font/noto_sans_bold"
+					android:textColor="@color/minebutton_color"
+					android:textSize="@dimen/_12ssp"
+					tools:text="2 GB"
+					app:layout_constraintBaseline_toBaselineOf="@id/ram_title"
+					app:layout_constraintEnd_toEndOf="parent" />
+
+				<TextView
+					android:id="@+id/ram_summary"
+					android:layout_width="0dp"
+					android:layout_height="wrap_content"
+					android:ellipsize="end"
+					android:maxLines="1"
+					android:textColor="@color/secondary_text"
+					android:textSize="@dimen/_9ssp"
+					tools:text="Güvenli üst sınır: 5 GB"
+					app:layout_constraintEnd_toEndOf="parent"
+					app:layout_constraintStart_toStartOf="@id/ram_title"
+					app:layout_constraintTop_toBottomOf="@id/ram_title" />
+
+				<SeekBar
+					android:id="@+id/ram_seekbar"
+					android:layout_width="0dp"
+					android:layout_height="@dimen/_28sdp"
+					android:minHeight="0dp"
+					android:progressBackgroundTint="#4DFFFFFF"
+					android:progressTint="@color/minebutton_color"
+					android:splitTrack="false"
+					android:thumbTint="@color/minebutton_color"
+					android:contentDescription="@string/ram_control_title"
+					app:layout_constraintBottom_toBottomOf="parent"
+					app:layout_constraintEnd_toEndOf="parent"
+					app:layout_constraintStart_toStartOf="@id/ram_title"
+					app:layout_constraintTop_toBottomOf="@id/ram_summary" />
+			</androidx.constraintlayout.widget.ConstraintLayout>
+
 			<com.kdt.mcgui.LauncherMenuButton
 				android:id="@+id/custom_control_button"
 				style="@style/LauncherMenuButton.Universal"
 				android:layout_width="match_parent"
 				android:drawableStart="@drawable/ic_px_gamepad"
 				android:text="@string/mcl_option_customcontrol"
-				app:layout_constraintTop_toBottomOf="@id/low_graphics_card" />
+				app:layout_constraintTop_toBottomOf="@id/ram_card" />
 
 			<com.kdt.mcgui.LauncherMenuButton
 				android:id="@+id/install_jar_button"

@@ -8,6 +8,9 @@
     <string name="low_graphics_mode_summary">Maximum performance for low-end phones</string>
     <string name="low_graphics_enabled">Low graphics mode enabled</string>
     <string name="low_graphics_disabled">Normal graphics mode restored</string>
+    <string name="ram_control_title">RAM allocation</string>
+    <string name="ram_control_summary">Safe upper limit: %1$s</string>
+    <string name="ram_control_saved">RAM set to %1$s</string>
 
     <!-- Action bar part -->
 
