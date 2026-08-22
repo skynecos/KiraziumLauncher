@@ -4,9 +4,9 @@
     <string name="app_short_name">Kirazium Launcher</string>
     <string name="launcher_brand_title" translatable="false">KIRAZIUM</string>
     <string name="launcher_brand_subtitle" translatable="false">play.kirazium.com  •  26.1.2 Fabric</string>
-    <string name="low_graphics_mode_title">Low graphics mode</string>
-    <string name="low_graphics_mode_summary">Maximum performance for low-end phones</string>
-    <string name="low_graphics_enabled">Low graphics mode enabled</string>
+    <string name="low_graphics_mode_title">Ultra low graphics</string>
+    <string name="low_graphics_mode_summary">FPS Boost for the weakest phones</string>
+    <string name="low_graphics_enabled">Ultra low graphics and FPS Boost enabled</string>
     <string name="low_graphics_disabled">Normal graphics mode restored</string>
     <string name="ram_control_title">RAM allocation</string>
     <string name="ram_control_summary">Safe upper limit: %1$s</string>

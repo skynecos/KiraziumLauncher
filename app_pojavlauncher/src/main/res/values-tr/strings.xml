@@ -4,9 +4,9 @@
     <string name="app_short_name">Kirazium Launcher</string>
     <string name="launcher_brand_title" translatable="false">KIRAZIUM</string>
     <string name="launcher_brand_subtitle" translatable="false">play.kirazium.com  •  26.1.2 Fabric</string>
-    <string name="low_graphics_mode_title">Düşük Grafik Modu</string>
-    <string name="low_graphics_mode_summary">Zayıf telefonlar için maksimum performans</string>
-    <string name="low_graphics_enabled">Düşük grafik modu açıldı</string>
+    <string name="low_graphics_mode_title">Ultra Düşük Grafik</string>
+    <string name="low_graphics_mode_summary">En zayıf telefonlar için FPS Boost</string>
+    <string name="low_graphics_enabled">Ultra düşük grafik ve FPS Boost açıldı</string>
     <string name="low_graphics_disabled">Normal grafik ayarları geri yüklendi</string>
     <string name="ram_control_title">RAM Ayarı</string>
     <string name="ram_control_summary">Güvenli üst sınır: %1$s</string>
