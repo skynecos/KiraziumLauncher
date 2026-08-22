@@ -26,9 +26,12 @@ import java.nio.charset.StandardCharsets;
 
 public class AsyncAssetManager {
 
-    private static final String KIRAZIUM_BEDROCK_CONTROLS = "kirazium_bedrock.json";
+    private static final String KIRAZIUM_BEDROCK_CONTROLS = "kirazium_bedrock_v2.json";
+    private static final String KIRAZIUM_BEDROCK_LEGACY_CONTROLS = "kirazium_bedrock.json";
     private static final String KIRAZIUM_BEDROCK_CONTROLS_MARKER =
             "kiraziumBedrockControlsV1Installed";
+    private static final String KIRAZIUM_BEDROCK_POSITION_MARKER =
+            "kiraziumBedrockControlsPositionV1Installed";
     private static final String KIRAZIUM_BEDROCK_SCALE_MARKER =
             "kiraziumBedrockControlsAdaptiveScaleV1Installed";
     private static final int KIRAZIUM_BEDROCK_PHONE_SCALE = 55;
@@ -99,10 +102,14 @@ public class AsyncAssetManager {
 
         boolean controlsInstalled =
                 preferences.getBoolean(KIRAZIUM_BEDROCK_CONTROLS_MARKER, false);
+        boolean positionInstalled =
+                preferences.getBoolean(KIRAZIUM_BEDROCK_POSITION_MARKER, false);
         boolean scaleInstalled =
                 preferences.getBoolean(KIRAZIUM_BEDROCK_SCALE_MARKER, false);
         String bedrockControlPath = new File(
                 Tools.CTRLMAP_PATH, KIRAZIUM_BEDROCK_CONTROLS).getAbsolutePath();
+        String legacyControlPath = new File(
+                Tools.CTRLMAP_PATH, KIRAZIUM_BEDROCK_LEGACY_CONTROLS).getAbsolutePath();
         String currentControlPath = preferences.getString("defaultCtrl", Tools.CTRLDEF_FILE);
         boolean usesStockControls = !controlsInstalled && (!preferences.contains("defaultCtrl") ||
                 Tools.CTRLDEF_FILE.equals(currentControlPath));
@@ -116,6 +123,14 @@ public class AsyncAssetManager {
             editor.putString("defaultCtrl", bedrockControlPath);
             LauncherPreferences.PREF_DEFAULTCTRL_PATH = bedrockControlPath;
             usesBedrockControls = true;
+        }
+        if (!positionInstalled) {
+            editor.putBoolean(KIRAZIUM_BEDROCK_POSITION_MARKER, true);
+            if (legacyControlPath.equals(currentControlPath)) {
+                editor.putString("defaultCtrl", bedrockControlPath);
+                LauncherPreferences.PREF_DEFAULTCTRL_PATH = bedrockControlPath;
+                usesBedrockControls = true;
+            }
         }
         if (!scaleInstalled) {
             editor.putBoolean(KIRAZIUM_BEDROCK_SCALE_MARKER, true);
