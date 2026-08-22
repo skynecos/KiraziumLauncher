@@ -4,6 +4,10 @@
     <string name="app_short_name">Kirazium Launcher</string>
     <string name="launcher_brand_title" translatable="false">KIRAZIUM</string>
     <string name="launcher_brand_subtitle" translatable="false">play.kirazium.com  •  26.1.2 Fabric</string>
+    <string name="low_graphics_mode_title">Low graphics mode</string>
+    <string name="low_graphics_mode_summary">Maximum performance for low-end phones</string>
+    <string name="low_graphics_enabled">Low graphics mode enabled</string>
+    <string name="low_graphics_disabled">Normal graphics mode restored</string>
 
     <!-- Action bar part -->
 

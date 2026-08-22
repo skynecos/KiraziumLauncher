@@ -131,6 +131,8 @@ public class LauncherActivity extends BaseActivity {
             askForPermission(23, Manifest.permission.RECORD_AUDIO);
         }
 
+        KiraziumBootstrap.applySelectedGraphicsMode(this, selectedInstance);
+
         if(Accounts.getCurrent() == null){
             Toast.makeText(this, R.string.no_saved_accounts, Toast.LENGTH_LONG).show();
             ExtraCore.setValue(ExtraConstants.SELECT_AUTH_METHOD, true);
