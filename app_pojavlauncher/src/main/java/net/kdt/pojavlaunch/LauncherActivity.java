@@ -36,6 +36,7 @@ import net.kdt.pojavlaunch.fragments.SelectAuthFragment;
 import net.kdt.pojavlaunch.instances.Instance;
 import net.kdt.pojavlaunch.instances.InstanceInstaller;
 import net.kdt.pojavlaunch.instances.Instances;
+import net.kdt.pojavlaunch.instances.KiraziumBootstrap;
 import net.kdt.pojavlaunch.lifecycle.ContextAwareDoneListener;
 import net.kdt.pojavlaunch.lifecycle.ContextExecutor;
 import net.kdt.pojavlaunch.modloaders.modpacks.imagecache.IconCacheJanitor;
@@ -123,6 +124,11 @@ public class LauncherActivity extends BaseActivity {
         if (!Tools.isValidString(selectedInstance.versionId)){
             Toast.makeText(this, R.string.error_no_version, Toast.LENGTH_LONG).show();
             return false;
+        }
+
+        if (KiraziumBootstrap.PROFILE_NAME.equals(selectedInstance.name) &&
+                !checkForPermission(23, Manifest.permission.RECORD_AUDIO)) {
+            askForPermission(23, Manifest.permission.RECORD_AUDIO);
         }
 
         if(Accounts.getCurrent() == null){
