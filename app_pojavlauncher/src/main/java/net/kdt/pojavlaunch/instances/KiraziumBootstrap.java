@@ -5,7 +5,6 @@ import android.content.SharedPreferences;
 import android.util.Log;
 
 import net.kdt.pojavlaunch.Tools;
-import net.kdt.pojavlaunch.Architecture;
 import net.kdt.pojavlaunch.modloaders.FabriclikeUtils;
 import net.kdt.pojavlaunch.prefs.LauncherPreferences;
 import net.kdt.pojavlaunch.utils.DownloadUtils;
@@ -57,6 +56,8 @@ public final class KiraziumBootstrap {
     private static final String OPTIMIZATION_MARKER = ".kirazium-low-end-v2";
     public static final String LOW_GRAPHICS_PREFERENCE = "kiraziumLowGraphicsMode";
     private static final String BACKUP_RAM_PREFERENCE = "kiraziumNormalRamAllocation";
+    private static final String RAM_INDEPENDENCE_MARKER =
+            "kiraziumLowGraphicsRamIndependentV1";
     private static final String BACKUP_RESOLUTION_PREFERENCE = "kiraziumNormalResolutionRatio";
     private static final String BACKUP_VSYNC_PREFERENCE = "kiraziumNormalForceVsync";
     private static final String BACKUP_SUSTAINED_PREFERENCE = "kiraziumNormalSustainedPerformance";
@@ -114,29 +115,42 @@ public final class KiraziumBootstrap {
                 LauncherPreferences.DEFAULT_PREF.getBoolean(LOW_GRAPHICS_PREFERENCE, false);
     }
 
-    /** Applies a user-selected RAM value without letting low graphics mode overwrite it at launch. */
-    public static void setRamAllocation(Context context, int megabytes) {
+    /** Restores RAM values that older low-graphics builds may have reduced. */
+    public static void ensureLowGraphicsRamIndependence(Context context) {
         if (context == null || LauncherPreferences.DEFAULT_PREF == null) return;
 
-        SharedPreferences.Editor editor = LauncherPreferences.DEFAULT_PREF.edit()
-                .putInt("allocation", megabytes);
-        if (isLowGraphicsModeEnabled()) {
-            editor.putInt(BACKUP_RAM_PREFERENCE, megabytes);
+        SharedPreferences preferences = LauncherPreferences.DEFAULT_PREF;
+        if (preferences.getBoolean(RAM_INDEPENDENCE_MARKER, false)) return;
+
+        SharedPreferences.Editor editor = preferences.edit()
+                .putBoolean(RAM_INDEPENDENCE_MARKER, true);
+        if (preferences.getBoolean(LOW_GRAPHICS_PREFERENCE, false) &&
+                preferences.contains(BACKUP_RAM_PREFERENCE)) {
+            editor.putInt("allocation", preferences.getInt(BACKUP_RAM_PREFERENCE,
+                    LauncherPreferences.PREF_RAM_ALLOCATION));
         }
         editor.apply();
+        LauncherPreferences.loadPreferences(context);
+    }
+
+    /** Applies a user-selected RAM value independently from graphics presets. */
+    public static void setRamAllocation(Context context, int megabytes) {
+        if (context == null || LauncherPreferences.DEFAULT_PREF == null) return;
+        ensureLowGraphicsRamIndependence(context);
+        LauncherPreferences.DEFAULT_PREF.edit().putInt("allocation", megabytes).apply();
         LauncherPreferences.loadPreferences(context);
     }
 
     /** Enables the aggressive low-device preset while preserving the user's launcher settings. */
     public static void setLowGraphicsMode(Context context, Instance instance, boolean enabled) {
         if (context == null || LauncherPreferences.DEFAULT_PREF == null) return;
+        ensureLowGraphicsRamIndependence(context);
 
         SharedPreferences preferences = LauncherPreferences.DEFAULT_PREF;
         boolean wasEnabled = preferences.getBoolean(LOW_GRAPHICS_PREFERENCE, false);
         SharedPreferences.Editor editor = preferences.edit();
 
         if (enabled && !wasEnabled) {
-            editor.putInt(BACKUP_RAM_PREFERENCE, LauncherPreferences.PREF_RAM_ALLOCATION);
             editor.putInt(BACKUP_RESOLUTION_PREFERENCE,
                     Math.round(LauncherPreferences.PREF_SCALE_FACTOR * 100f));
             editor.putBoolean(BACKUP_VSYNC_PREFERENCE, LauncherPreferences.PREF_FORCE_VSYNC);
@@ -146,14 +160,11 @@ public final class KiraziumBootstrap {
 
         editor.putBoolean(LOW_GRAPHICS_PREFERENCE, enabled);
         if (enabled) {
-            editor.putInt("allocation", getLowGraphicsRam(context));
-            editor.putInt("resolutionRatio", 60);
+            editor.putInt("resolutionRatio", 50);
             editor.putBoolean("force_vsync", false);
             editor.putBoolean("vsync_in_zink", false);
             editor.putBoolean("sustainedPerformance", true);
         } else if (wasEnabled) {
-            editor.putInt("allocation", preferences.getInt(BACKUP_RAM_PREFERENCE,
-                    LauncherPreferences.PREF_RAM_ALLOCATION));
             editor.putInt("resolutionRatio", preferences.getInt(BACKUP_RESOLUTION_PREFERENCE,
                     Math.round(LauncherPreferences.PREF_SCALE_FACTOR * 100f)));
             editor.putBoolean("force_vsync", preferences.getBoolean(BACKUP_VSYNC_PREFERENCE,
@@ -170,11 +181,12 @@ public final class KiraziumBootstrap {
     /** Re-applies the selected preset immediately before launch. */
     public static void applySelectedGraphicsMode(Context context, Instance instance) {
         if (context == null || instance == null || !PROFILE_NAME.equals(instance.name)) return;
+        ensureLowGraphicsRamIndependence(context);
         boolean lowGraphics = isLowGraphicsModeEnabled();
         if (lowGraphics) {
             SharedPreferences preferences = LauncherPreferences.DEFAULT_PREF;
             preferences.edit()
-                    .putInt("resolutionRatio", 60)
+                    .putInt("resolutionRatio", 50)
                     .putBoolean("force_vsync", false)
                     .putBoolean("vsync_in_zink", false)
                     .putBoolean("sustainedPerformance", true)
@@ -182,16 +194,6 @@ public final class KiraziumBootstrap {
             LauncherPreferences.loadPreferences(context);
         }
         applyGraphicsOptions(instance, lowGraphics);
-    }
-
-    private static int getLowGraphicsRam(Context context) {
-        if (Architecture.is32BitsDevice()) return 696;
-        int totalRam = Tools.getTotalDeviceMemory(context);
-        if (totalRam < 2048) return 696;
-        if (totalRam < 3072) return 896;
-        if (totalRam < 4096) return 1152;
-        if (totalRam < 6144) return 1408;
-        return 1536;
     }
 
     private static void applyGraphicsOptions(Instance instance, boolean lowGraphics) {
@@ -208,13 +210,13 @@ public final class KiraziumBootstrap {
 
     private static LinkedHashMap<String, String> createLowGraphicsOptions() {
         LinkedHashMap<String, String> options = createNormalGraphicsOptions();
-        options.put("renderDistance", "4");
+        options.put("renderDistance", "3");
         options.put("simulationDistance", "5");
         options.put("entityDistanceScaling", "0.5");
         options.put("weatherRadius", "0");
         options.put("particles", "2");
         options.put("mipmapLevels", "0");
-        options.put("maxFps", "40");
+        options.put("maxFps", "60");
         options.put("bobView", "false");
         return options;
     }

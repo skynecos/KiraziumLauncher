@@ -86,6 +86,7 @@ public class MainMenuFragment extends Fragment {
 
         mOpenDirectoryButton.setOnClickListener((v)-> openGameDirectory(v.getContext()));
 
+        KiraziumBootstrap.ensureLowGraphicsRamIndependence(requireContext());
         mLowGraphicsSwitch.setChecked(KiraziumBootstrap.isLowGraphicsModeEnabled());
         setupRamControl(view);
         mLowGraphicsCard.setOnClickListener(v ->
