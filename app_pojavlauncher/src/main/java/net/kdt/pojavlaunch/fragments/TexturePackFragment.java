@@ -197,11 +197,10 @@ public class TexturePackFragment extends Fragment {
                     if (!isAdded()) return;
                     button.setEnabled(false);
                     button.setText(R.string.texture_pack_installed);
-                    Toast.makeText(requireContext(),
-                            alreadyThere
-                                    ? R.string.texture_pack_already_installed
-                                    : getString(R.string.texture_pack_installed_message, pack.title),
-                            Toast.LENGTH_SHORT).show();
+                    CharSequence message = alreadyThere
+                            ? getString(R.string.texture_pack_already_installed)
+                            : getString(R.string.texture_pack_installed_message, pack.title);
+                    Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show();
                 });
             } catch (Exception exception) {
                 Tools.runOnUiThread(() -> {
