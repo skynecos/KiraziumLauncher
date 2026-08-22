@@ -176,6 +176,7 @@ public final class KiraziumBootstrap {
         editor.apply();
         LauncherPreferences.loadPreferences(context);
         applyGraphicsOptions(instance, enabled);
+        applySafeModProfile(instance, enabled);
     }
 
     /** Re-applies the selected preset immediately before launch. */
@@ -194,6 +195,7 @@ public final class KiraziumBootstrap {
             LauncherPreferences.loadPreferences(context);
         }
         applyGraphicsOptions(instance, lowGraphics);
+        applySafeModProfile(instance, lowGraphics);
     }
 
     private static void applyGraphicsOptions(Instance instance, boolean lowGraphics) {
@@ -241,6 +243,165 @@ public final class KiraziumBootstrap {
         options.put("enableVsync", "false");
         options.put("bobView", "true");
         return options;
+    }
+
+    /**
+     * Applies only stable mod settings. Every touched config is preserved byte-for-byte and is
+     * restored when Ultra Low Graphics is disabled. Experimental ImmediatelyFast features and
+     * EntityCulling's visually aggressive display/solid-leaf modes deliberately remain disabled.
+     */
+    private static void applySafeModProfile(Instance instance, boolean enabled) {
+        if (instance == null || !PROFILE_NAME.equals(instance.name)) return;
+
+        File configDirectory = new File(instance.getGameDirectory(), "config");
+        if (enabled) {
+            try {
+                FileUtils.ensureDirectory(configDirectory);
+            } catch (IOException exception) {
+                Log.w(TAG, "Kirazium mod config directory could not be prepared", exception);
+                return;
+            }
+        }
+
+        updateModConfig(new File(configDirectory, "sodium-options.json"), enabled,
+                KiraziumBootstrap::configureSodium);
+        updateModConfig(new File(configDirectory, "sodium-extra-options.json"), enabled,
+                KiraziumBootstrap::configureSodiumExtra);
+        updateModConfig(new File(configDirectory, "entityculling.json"), enabled,
+                KiraziumBootstrap::configureEntityCulling);
+        updateModConfig(new File(configDirectory, "immediatelyfast.json"), enabled,
+                KiraziumBootstrap::configureImmediatelyFast);
+    }
+
+    private static void configureSodium(JSONObject root) throws JSONException {
+        JSONObject quality = getOrCreateObject(root, "quality");
+        quality.put("hidden_fluid_culling", true);
+        quality.put("improved_fluid_shaping", false);
+        quality.put("use_closest_point_entity_sort", false);
+        quality.put("pixel_filtering_mode", "NEAREST");
+
+        JSONObject performance = getOrCreateObject(root, "performance");
+        performance.put("chunk_builder_threads", 0);
+        performance.put("chunk_build_defer_mode", "ALWAYS");
+        performance.put("animate_only_visible_textures", true);
+        performance.put("use_entity_culling", true);
+        performance.put("use_fog_occlusion", true);
+        performance.put("use_block_face_culling", true);
+        performance.put("use_no_error_gl_context", true);
+        performance.put("quad_splitting_mode", "SAFE");
+
+        JSONObject advanced = getOrCreateObject(root, "advanced");
+        advanced.put("enable_memory_tracing", false);
+        advanced.put("use_advanced_staging_buffers", true);
+        advanced.put("cpu_render_ahead_limit", 3);
+    }
+
+    private static void configureSodiumExtra(JSONObject root) throws JSONException {
+        JSONObject animations = getOrCreateObject(root, "animation_settings");
+        animations.put("animation", false);
+        animations.put("water", false);
+        animations.put("lava", false);
+        animations.put("fire", false);
+        animations.put("portal", false);
+        animations.put("block_animations", false);
+        animations.put("sculk_sensor", false);
+
+        JSONObject particles = getOrCreateObject(root, "particle_settings");
+        particles.put("particles", false);
+        particles.put("rain_splash", false);
+        particles.put("block_break", false);
+        particles.put("block_breaking", false);
+
+        JSONObject details = getOrCreateObject(root, "detail_settings");
+        details.put("rain_snow", false);
+
+        JSONObject extras = getOrCreateObject(root, "extra_settings");
+        extras.put("prevent_shaders", true);
+    }
+
+    private static void configureEntityCulling(JSONObject root) throws JSONException {
+        root.put("debugMode", false);
+        root.put("tickCulling", true);
+        root.put("skipEntityCulling", false);
+        root.put("skipBlockEntityCulling", false);
+        root.put("blockEntityFrustumCulling", true);
+        root.put("forceDisplayCulling", false);
+        root.put("solidLeaves", false);
+    }
+
+    private static void configureImmediatelyFast(JSONObject root) throws JSONException {
+        root.put("enhanced_batching", true);
+        root.put("font_atlas_resizing", true);
+        root.put("map_atlas_generation", true);
+        root.put("skip_text_translucency_sorting", true);
+        root.put("fast_text_lookup", true);
+        root.put("avoid_redundant_framebuffer_switching", true);
+        root.put("fix_slow_buffer_upload_on_apple_gpu", true);
+
+        root.put("experimental_disable_resource_pack_conflict_handling", false);
+        root.put("experimental_sign_text_buffering", false);
+        root.put("debug_only_and_not_recommended_disable_mod_conflict_handling", false);
+        root.put("debug_only_and_not_recommended_disable_hardware_conflict_handling", false);
+        root.put("debug_only_print_additional_error_information", false);
+        root.put("debug_only_use_last_usage_for_batch_ordering", false);
+        root.put("debug_only_detailed_memory_leak_detection", false);
+    }
+
+    private static JSONObject getOrCreateObject(JSONObject root, String key) throws JSONException {
+        JSONObject object = root.optJSONObject(key);
+        if (object == null) {
+            object = new JSONObject();
+            root.put(key, object);
+        }
+        return object;
+    }
+
+    private static void updateModConfig(File config, boolean enabled, JsonConfigUpdater updater) {
+        File backup = new File(config.getParentFile(), config.getName() + ".kirazium-normal");
+        File absentMarker = new File(config.getParentFile(), config.getName() + ".kirazium-absent");
+        try {
+            if (enabled) {
+                if (!backup.isFile() && !absentMarker.isFile()) {
+                    if (config.isFile()) {
+                        Tools.write(backup, Tools.read(config));
+                    } else {
+                        Tools.write(absentMarker, "absent\n");
+                    }
+                }
+
+                JSONObject json = config.isFile()
+                        ? new JSONObject(Tools.read(config))
+                        : new JSONObject();
+                updater.update(json);
+                Tools.write(config, json.toString(2) + "\n");
+                return;
+            }
+
+            if (backup.isFile()) {
+                Tools.write(config, Tools.read(backup));
+                if (!backup.delete()) {
+                    Log.w(TAG, "Could not remove restored mod config backup: " + backup);
+                }
+                if (absentMarker.isFile() && !absentMarker.delete()) {
+                    Log.w(TAG, "Could not remove stale mod config marker: " + absentMarker);
+                }
+            } else if (absentMarker.isFile()) {
+                if (config.exists() && !config.delete()) {
+                    throw new IOException("Could not remove Ultra-mode mod config: " + config);
+                }
+                if (!absentMarker.delete()) {
+                    Log.w(TAG, "Could not remove mod config marker: " + absentMarker);
+                }
+            }
+        } catch (IOException | JSONException exception) {
+            // One incompatible or user-edited config must not block the other safe optimizations.
+            Log.w(TAG, "Kirazium safe mod profile could not update " + config.getName(), exception);
+        }
+    }
+
+    @FunctionalInterface
+    private interface JsonConfigUpdater {
+        void update(JSONObject root) throws JSONException;
     }
 
     private static void ensurePerformanceMods(File gameDirectory) throws IOException, JSONException {
