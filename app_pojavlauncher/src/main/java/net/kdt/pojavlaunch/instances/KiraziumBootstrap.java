@@ -167,7 +167,7 @@ public final class KiraziumBootstrap {
 
         editor.putBoolean(LOW_GRAPHICS_PREFERENCE, enabled);
         if (enabled) {
-            editor.putInt("resolutionRatio", 50);
+            editor.putInt("resolutionRatio", 80);
             editor.putBoolean("force_vsync", false);
             editor.putBoolean("vsync_in_zink", false);
             editor.putBoolean("sustainedPerformance", true);
@@ -194,7 +194,7 @@ public final class KiraziumBootstrap {
         if (lowGraphics) {
             SharedPreferences preferences = LauncherPreferences.DEFAULT_PREF;
             preferences.edit()
-                    .putInt("resolutionRatio", 50)
+                    .putInt("resolutionRatio", 80)
                     .putBoolean("force_vsync", false)
                     .putBoolean("vsync_in_zink", false)
                     .putBoolean("sustainedPerformance", true)
