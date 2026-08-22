@@ -51,7 +51,14 @@ public final class KiraziumBootstrap {
             "dynamic-fps",
             "simple-voice-chat"
     };
+    private static final String[] OPTIFINE_MODEL_COMPAT_MODS = new String[] {
+            "entitytexturefeatures",
+            "entity-model-features",
+            "cit-resewn-continuation"
+    };
     private static final String BOOTSTRAP_MARKER = ".kirazium-bootstrap-v2";
+    private static final String OPTIFINE_MODEL_COMPAT_MARKER =
+            ".kirazium-optifine-model-compat-v1";
     private static final String LANGUAGE_MARKER = ".kirazium-language-tr-v1";
     private static final String OPTIMIZATION_MARKER = ".kirazium-low-end-v2";
     public static final String LOW_GRAPHICS_PREFERENCE = "kiraziumLowGraphicsMode";
@@ -92,6 +99,7 @@ public final class KiraziumBootstrap {
             ensureTurkishLanguage(gameDirectory);
             ensureLowEndOptimizations(gameDirectory);
             ensurePerformanceMods(gameDirectory);
+            ensureOptiFineModelCompatibility(gameDirectory);
         } catch (Exception exception) {
             // Do not make the launcher unusable when a third-party download is temporarily unavailable.
             Log.w(TAG, "Kirazium client preparation will be retried", exception);
@@ -414,6 +422,19 @@ public final class KiraziumBootstrap {
             downloadLatestRelease(project, modsDirectory);
         }
         Tools.write(marker, "game=" + GAME_VERSION + "\nloader=" + FABRIC_LOADER_VERSION + "\n");
+    }
+
+    private static void ensureOptiFineModelCompatibility(File gameDirectory)
+            throws IOException, JSONException {
+        File marker = new File(gameDirectory, OPTIFINE_MODEL_COMPAT_MARKER);
+        if (marker.isFile()) return;
+
+        File modsDirectory = new File(gameDirectory, "mods");
+        FileUtils.ensureDirectory(modsDirectory);
+        for (String project : OPTIFINE_MODEL_COMPAT_MODS) {
+            downloadLatestRelease(project, modsDirectory);
+        }
+        Tools.write(marker, "game=" + GAME_VERSION + "\nloader=fabric\n");
     }
 
     private static void downloadLatestRelease(String project, File modsDirectory) throws IOException, JSONException {
