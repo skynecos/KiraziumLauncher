@@ -40,7 +40,6 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -283,6 +282,16 @@ public class TexturePackFragment extends Fragment {
         });
     }
 
+    private String formatDownloads(long downloads) {
+        if (downloads >= 1_000_000L) {
+            return String.format(Locale.getDefault(), "%.1f Mn", downloads / 1_000_000f);
+        }
+        if (downloads >= 1_000L) {
+            return String.format(Locale.getDefault(), "%.1f B", downloads / 1_000f);
+        }
+        return Long.toString(downloads);
+    }
+
     private final class TexturePackAdapter extends RecyclerView.Adapter<TexturePackViewHolder> {
         private final List<TexturePack> items = new ArrayList<>();
 
@@ -307,8 +316,7 @@ public class TexturePackFragment extends Fragment {
             holder.description.setText(pack.description);
             holder.downloads.setText(getString(
                     R.string.texture_pack_downloads,
-                    NumberFormat.getCompactNumberInstance(Locale.getDefault(),
-                            NumberFormat.Style.SHORT).format(pack.downloads)));
+                    formatDownloads(pack.downloads)));
             loadIcon(pack, holder.icon);
 
             boolean installed = mInstalledProjects.contains(pack.projectId);
