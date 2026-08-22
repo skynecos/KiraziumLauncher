@@ -18,8 +18,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.zip.GZIPInputStream;
-import java.util.zip.GZIPOutputStream;
 
 /** Creates and maintains the ready-to-play Kirazium profile. */
 public final class KiraziumBootstrap {
@@ -43,6 +41,7 @@ public final class KiraziumBootstrap {
             "sodium-extra"
     };
     private static final String BOOTSTRAP_MARKER = ".kirazium-bootstrap-v1";
+    private static final String LANGUAGE_MARKER = ".kirazium-language-tr-v1";
 
     private KiraziumBootstrap() {
     }
@@ -71,6 +70,7 @@ public final class KiraziumBootstrap {
             FileUtils.ensureDirectory(gameDirectory);
             ensureServerEntry(gameDirectory);
             ensureLowEndOptions(gameDirectory);
+            ensureTurkishLanguage(gameDirectory);
             ensurePerformanceMods(gameDirectory);
         } catch (Exception exception) {
             // Do not make the launcher unusable when a third-party download is temporarily unavailable.
@@ -140,6 +140,7 @@ public final class KiraziumBootstrap {
         File options = new File(gameDirectory, "options.txt");
         if (options.exists()) return;
         String lowEndDefaults =
+                "lang:tr_tr\n" +
                 "renderDistance:6\n" +
                 "simulationDistance:5\n" +
                 "entityDistanceScaling:0.5\n" +
@@ -150,6 +151,27 @@ public final class KiraziumBootstrap {
                 "maxFps:60\n" +
                 "enableVsync:false\n";
         Tools.write(options, lowEndDefaults);
+    }
+
+    private static void ensureTurkishLanguage(File gameDirectory) throws IOException {
+        File marker = new File(gameDirectory, LANGUAGE_MARKER);
+        if (marker.isFile()) return;
+
+        File options = new File(gameDirectory, "options.txt");
+        String existing = options.isFile() ? Tools.read(options) : "";
+        StringBuilder updated = new StringBuilder();
+        boolean replaced = false;
+        for (String line : existing.split("\\r?\\n")) {
+            if (line.startsWith("lang:")) {
+                updated.append("lang:tr_tr\n");
+                replaced = true;
+            } else if (!line.isEmpty()) {
+                updated.append(line).append('\n');
+            }
+        }
+        if (!replaced) updated.append("lang:tr_tr\n");
+        Tools.write(options, updated.toString());
+        Tools.write(marker, "tr_tr\n");
     }
 
     private static void ensureServerEntry(File gameDirectory) throws IOException {
@@ -170,8 +192,9 @@ public final class KiraziumBootstrap {
         }
 
         FileUtils.ensureParentDirectory(serversFile);
+        // Minecraft 26.1 uses NbtIo.write/read here, which is raw (uncompressed) NBT.
         try (DataOutputStream output = new DataOutputStream(new BufferedOutputStream(
-                new GZIPOutputStream(new FileOutputStream(serversFile))))) {
+                new FileOutputStream(serversFile)))) {
             output.writeByte(10); // TAG_Compound root
             output.writeUTF("");
 
@@ -193,7 +216,7 @@ public final class KiraziumBootstrap {
     private static boolean containsServerAddress(File serversFile) {
         if (!serversFile.isFile()) return false;
         byte[] address = SERVER_ADDRESS.getBytes(StandardCharsets.UTF_8);
-        try (GZIPInputStream input = new GZIPInputStream(new java.io.FileInputStream(serversFile))) {
+        try (java.io.FileInputStream input = new java.io.FileInputStream(serversFile)) {
             int matched = 0;
             int value;
             while ((value = input.read()) != -1) {
