@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginVertical="@dimen/_3sdp"
+    android:background="@drawable/kirazium_low_graphics_card"
+    android:minHeight="@dimen/_82sdp"
+    android:padding="@dimen/_10sdp">
+
+    <ImageView
+        android:id="@+id/texture_pack_icon"
+        android:layout_width="@dimen/_54sdp"
+        android:layout_height="@dimen/_54sdp"
+        android:background="@drawable/background_card"
+        android:contentDescription="@null"
+        android:padding="@dimen/_3sdp"
+        android:scaleType="centerCrop"
+        android:src="@drawable/ic_px_image"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <TextView
+        android:id="@+id/texture_pack_item_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/_10sdp"
+        android:ellipsize="end"
+        android:fontFamily="@font/noto_sans_bold"
+        android:maxLines="1"
+        android:textColor="@color/primary_text"
+        android:textSize="@dimen/_12ssp"
+        app:layout_constraintEnd_toStartOf="@id/texture_pack_download_button"
+        app:layout_constraintStart_toEndOf="@id/texture_pack_icon"
+        app:layout_constraintTop_toTopOf="parent"
+        tools:text="Stay True" />
+
+    <TextView
+        android:id="@+id/texture_pack_item_description"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/_2sdp"
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:textColor="@color/secondary_text"
+        android:textSize="@dimen/_9ssp"
+        app:layout_constraintEnd_toEndOf="@id/texture_pack_item_title"
+        app:layout_constraintStart_toStartOf="@id/texture_pack_item_title"
+        app:layout_constraintTop_toBottomOf="@id/texture_pack_item_title"
+        tools:text="Minecraft görünümünü sade ve canlı detaylarla yenileyen bir resource pack." />
+
+    <ImageView
+        android:id="@+id/texture_pack_source_icon"
+        android:layout_width="@dimen/_14sdp"
+        android:layout_height="@dimen/_14sdp"
+        android:layout_marginStart="@dimen/_10sdp"
+        android:layout_marginTop="@dimen/_5sdp"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_modrinth"
+        app:layout_constraintStart_toEndOf="@id/texture_pack_icon"
+        app:layout_constraintTop_toBottomOf="@id/texture_pack_item_description" />
+
+    <TextView
+        android:id="@+id/texture_pack_item_downloads"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/_4sdp"
+        android:textColor="@color/minebutton_color"
+        android:textSize="@dimen/_8ssp"
+        app:layout_constraintBottom_toBottomOf="@id/texture_pack_source_icon"
+        app:layout_constraintEnd_toEndOf="@id/texture_pack_item_description"
+        app:layout_constraintStart_toEndOf="@id/texture_pack_source_icon"
+        app:layout_constraintTop_toTopOf="@id/texture_pack_source_icon"
+        tools:text="1,2 Mn indirme" />
+
+    <com.kdt.mcgui.MineButton
+        android:id="@+id/texture_pack_download_button"
+        android:layout_width="@dimen/_82sdp"
+        android:layout_height="@dimen/_38sdp"
+        android:minHeight="0dp"
+        android:minWidth="0dp"
+        android:text="@string/texture_pack_download"
+        android:textAllCaps="false"
+        android:textSize="@dimen/_9ssp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
