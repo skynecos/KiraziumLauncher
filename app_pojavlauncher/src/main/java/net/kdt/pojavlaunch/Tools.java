@@ -89,7 +89,7 @@ public final class Tools {
     public static final String MAVEN_CENTRAL = "https://maven-central-eu.storage-download.googleapis.com/maven2/";
     public  static final float BYTE_TO_MB = 1024 * 1024;
     public static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
-    public static String APP_NAME = "PojavLauncher";
+    public static String APP_NAME = "KiraziumLauncher";
 
     public static final Gson GLOBAL_GSON = new GsonBuilder().setPrettyPrinting().create();
 
@@ -102,7 +102,7 @@ public final class Tools {
 
     // New since 3.3.1
     public static String DIR_ACCOUNT_NEW;
-    public static String DIR_GAME_HOME = Environment.getExternalStorageDirectory().getAbsolutePath() + "/games/PojavLauncher";
+    public static String DIR_GAME_HOME = Environment.getExternalStorageDirectory().getAbsolutePath() + "/games/KiraziumLauncher";
     public static String DIR_GAME_NEW;
 
     // New since 2.4.2
@@ -125,7 +125,7 @@ public final class Tools {
         }
         File externalStorageDirectory = Environment.getExternalStorageDirectory();
         if(externalStorageDirectory == null) return null;
-        File launcherRoot = new File(externalStorageDirectory,"games/PojavLauncher");
+        File launcherRoot = new File(externalStorageDirectory,"games/KiraziumLauncher");
         if(!Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState(launcherRoot))) return null;
         return launcherRoot;
     }

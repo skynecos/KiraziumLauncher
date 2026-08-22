@@ -94,6 +94,7 @@ public class Instances {
             setSelectedInstance(instances.get(0));
             selectionIndex[0] = 0;
         }
+        KiraziumBootstrap.ensureClientFiles(instances);
         return new Instances(Collections.unmodifiableList(instances), selectionIndex[0]);
     }
 
@@ -140,10 +141,15 @@ public class Instances {
      * Create a new instance intended for first-time launcher users.
      */
     private static void createFirstTimeInstance() throws IOException {
+        String versionId = KiraziumBootstrap.installFabricProfile();
         internalCreateInstance((instance)-> {
             instance.sharedData = true;
-            instance.versionId = "1.12.2";
-        }, null);
+            instance.name = KiraziumBootstrap.PROFILE_NAME;
+            instance.icon = KiraziumBootstrap.PROFILE_ICON;
+            instance.versionId = versionId;
+            instance.renderer = "opengles3_ltw";
+            instance.selectedRuntime = "Internal-25";
+        }, "kirazium");
     }
 
     /**
