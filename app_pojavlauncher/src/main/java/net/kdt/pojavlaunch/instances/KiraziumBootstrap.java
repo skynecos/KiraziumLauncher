@@ -1,9 +1,13 @@
 package net.kdt.pojavlaunch.instances;
 
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.util.Log;
 
 import net.kdt.pojavlaunch.Tools;
+import net.kdt.pojavlaunch.Architecture;
 import net.kdt.pojavlaunch.modloaders.FabriclikeUtils;
+import net.kdt.pojavlaunch.prefs.LauncherPreferences;
 import net.kdt.pojavlaunch.utils.DownloadUtils;
 import net.kdt.pojavlaunch.utils.FileUtils;
 
@@ -51,6 +55,11 @@ public final class KiraziumBootstrap {
     private static final String BOOTSTRAP_MARKER = ".kirazium-bootstrap-v2";
     private static final String LANGUAGE_MARKER = ".kirazium-language-tr-v1";
     private static final String OPTIMIZATION_MARKER = ".kirazium-low-end-v2";
+    public static final String LOW_GRAPHICS_PREFERENCE = "kiraziumLowGraphicsMode";
+    private static final String BACKUP_RAM_PREFERENCE = "kiraziumNormalRamAllocation";
+    private static final String BACKUP_RESOLUTION_PREFERENCE = "kiraziumNormalResolutionRatio";
+    private static final String BACKUP_VSYNC_PREFERENCE = "kiraziumNormalForceVsync";
+    private static final String BACKUP_SUSTAINED_PREFERENCE = "kiraziumNormalSustainedPerformance";
 
     private KiraziumBootstrap() {
     }
@@ -98,6 +107,126 @@ public final class KiraziumBootstrap {
         } catch (IOException exception) {
             Log.w(TAG, "Kirazium server entry could not be prepared", exception);
         }
+    }
+
+    public static boolean isLowGraphicsModeEnabled() {
+        return LauncherPreferences.DEFAULT_PREF != null &&
+                LauncherPreferences.DEFAULT_PREF.getBoolean(LOW_GRAPHICS_PREFERENCE, false);
+    }
+
+    /** Enables the aggressive low-device preset while preserving the user's launcher settings. */
+    public static void setLowGraphicsMode(Context context, Instance instance, boolean enabled) {
+        if (context == null || LauncherPreferences.DEFAULT_PREF == null) return;
+
+        SharedPreferences preferences = LauncherPreferences.DEFAULT_PREF;
+        boolean wasEnabled = preferences.getBoolean(LOW_GRAPHICS_PREFERENCE, false);
+        SharedPreferences.Editor editor = preferences.edit();
+
+        if (enabled && !wasEnabled) {
+            editor.putInt(BACKUP_RAM_PREFERENCE, LauncherPreferences.PREF_RAM_ALLOCATION);
+            editor.putInt(BACKUP_RESOLUTION_PREFERENCE,
+                    Math.round(LauncherPreferences.PREF_SCALE_FACTOR * 100f));
+            editor.putBoolean(BACKUP_VSYNC_PREFERENCE, LauncherPreferences.PREF_FORCE_VSYNC);
+            editor.putBoolean(BACKUP_SUSTAINED_PREFERENCE,
+                    LauncherPreferences.PREF_SUSTAINED_PERFORMANCE);
+        }
+
+        editor.putBoolean(LOW_GRAPHICS_PREFERENCE, enabled);
+        if (enabled) {
+            editor.putInt("allocation", getLowGraphicsRam(context));
+            editor.putInt("resolutionRatio", 60);
+            editor.putBoolean("force_vsync", false);
+            editor.putBoolean("vsync_in_zink", false);
+            editor.putBoolean("sustainedPerformance", true);
+        } else if (wasEnabled) {
+            editor.putInt("allocation", preferences.getInt(BACKUP_RAM_PREFERENCE,
+                    LauncherPreferences.PREF_RAM_ALLOCATION));
+            editor.putInt("resolutionRatio", preferences.getInt(BACKUP_RESOLUTION_PREFERENCE,
+                    Math.round(LauncherPreferences.PREF_SCALE_FACTOR * 100f)));
+            editor.putBoolean("force_vsync", preferences.getBoolean(BACKUP_VSYNC_PREFERENCE,
+                    LauncherPreferences.PREF_FORCE_VSYNC));
+            editor.putBoolean("sustainedPerformance",
+                    preferences.getBoolean(BACKUP_SUSTAINED_PREFERENCE,
+                            LauncherPreferences.PREF_SUSTAINED_PERFORMANCE));
+        }
+        editor.apply();
+        LauncherPreferences.loadPreferences(context);
+        applyGraphicsOptions(instance, enabled);
+    }
+
+    /** Re-applies the selected preset immediately before launch. */
+    public static void applySelectedGraphicsMode(Context context, Instance instance) {
+        if (context == null || instance == null || !PROFILE_NAME.equals(instance.name)) return;
+        boolean lowGraphics = isLowGraphicsModeEnabled();
+        if (lowGraphics) {
+            SharedPreferences preferences = LauncherPreferences.DEFAULT_PREF;
+            preferences.edit()
+                    .putInt("allocation", getLowGraphicsRam(context))
+                    .putInt("resolutionRatio", 60)
+                    .putBoolean("force_vsync", false)
+                    .putBoolean("vsync_in_zink", false)
+                    .putBoolean("sustainedPerformance", true)
+                    .apply();
+            LauncherPreferences.loadPreferences(context);
+        }
+        applyGraphicsOptions(instance, lowGraphics);
+    }
+
+    private static int getLowGraphicsRam(Context context) {
+        if (Architecture.is32BitsDevice()) return 696;
+        int totalRam = Tools.getTotalDeviceMemory(context);
+        if (totalRam < 2048) return 696;
+        if (totalRam < 3072) return 896;
+        if (totalRam < 4096) return 1152;
+        if (totalRam < 6144) return 1408;
+        return 1536;
+    }
+
+    private static void applyGraphicsOptions(Instance instance, boolean lowGraphics) {
+        if (instance == null || !PROFILE_NAME.equals(instance.name)) return;
+        try {
+            File gameDirectory = instance.getGameDirectory();
+            FileUtils.ensureDirectory(gameDirectory);
+            upsertOptions(new File(gameDirectory, "options.txt"),
+                    lowGraphics ? createLowGraphicsOptions() : createNormalGraphicsOptions());
+        } catch (IOException exception) {
+            Log.w(TAG, "Kirazium graphics preset could not be applied", exception);
+        }
+    }
+
+    private static LinkedHashMap<String, String> createLowGraphicsOptions() {
+        LinkedHashMap<String, String> options = createNormalGraphicsOptions();
+        options.put("renderDistance", "4");
+        options.put("simulationDistance", "5");
+        options.put("entityDistanceScaling", "0.5");
+        options.put("weatherRadius", "0");
+        options.put("particles", "2");
+        options.put("mipmapLevels", "0");
+        options.put("maxFps", "40");
+        options.put("bobView", "false");
+        return options;
+    }
+
+    private static LinkedHashMap<String, String> createNormalGraphicsOptions() {
+        LinkedHashMap<String, String> options = new LinkedHashMap<>();
+        options.put("graphicsPreset", "custom");
+        options.put("renderDistance", "6");
+        options.put("simulationDistance", "5");
+        options.put("entityDistanceScaling", "0.5");
+        options.put("ao", "false");
+        options.put("renderClouds", "false");
+        options.put("entityShadows", "false");
+        options.put("cutoutLeaves", "false");
+        options.put("improvedTransparency", "false");
+        options.put("weatherRadius", "5");
+        options.put("menuBackgroundBlurriness", "0");
+        options.put("particles", "1");
+        options.put("mipmapLevels", "2");
+        options.put("biomeBlendRadius", "0");
+        options.put("maxFps", "60");
+        options.put("enableVsync", "false");
+        options.put("bobView", "true");
+        return options;
     }
 
     private static void ensurePerformanceMods(File gameDirectory) throws IOException, JSONException {

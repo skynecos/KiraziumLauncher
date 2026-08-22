@@ -15,6 +15,7 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
+import androidx.appcompat.widget.SwitchCompat;
 
 import com.kdt.mcgui.mcVersionSpinner;
 
@@ -27,6 +28,7 @@ import net.kdt.pojavlaunch.extra.ExtraConstants;
 import net.kdt.pojavlaunch.extra.ExtraCore;
 import net.kdt.pojavlaunch.instances.Instance;
 import net.kdt.pojavlaunch.instances.Instances;
+import net.kdt.pojavlaunch.instances.KiraziumBootstrap;
 import net.kdt.pojavlaunch.progresskeeper.ProgressKeeper;
 import net.kdt.pojavlaunch.utils.FileUtils;
 
@@ -54,6 +56,8 @@ public class MainMenuFragment extends Fragment {
         Button mInstallJarButton = view.findViewById(R.id.install_jar_button);
         Button mShareLogsButton = view.findViewById(R.id.share_logs_button);
         Button mOpenDirectoryButton = view.findViewById(R.id.open_files_button);
+        View mLowGraphicsCard = view.findViewById(R.id.low_graphics_card);
+        SwitchCompat mLowGraphicsSwitch = view.findViewById(R.id.low_graphics_switch);
 
         ImageButton mEditProfileButton = view.findViewById(R.id.edit_profile_button);
         Button mPlayButton = view.findViewById(R.id.play_button);
@@ -70,6 +74,17 @@ public class MainMenuFragment extends Fragment {
         mShareLogsButton.setOnClickListener((v) -> shareLog(requireContext()));
 
         mOpenDirectoryButton.setOnClickListener((v)-> openGameDirectory(v.getContext()));
+
+        mLowGraphicsSwitch.setChecked(KiraziumBootstrap.isLowGraphicsModeEnabled());
+        mLowGraphicsCard.setOnClickListener(v ->
+                mLowGraphicsSwitch.setChecked(!mLowGraphicsSwitch.isChecked()));
+        mLowGraphicsSwitch.setOnCheckedChangeListener((button, isChecked) -> {
+            Instance instance = Instances.loadSelectedInstance();
+            KiraziumBootstrap.setLowGraphicsMode(requireContext(), instance, isChecked);
+            Toast.makeText(requireContext(), isChecked
+                    ? R.string.low_graphics_enabled
+                    : R.string.low_graphics_disabled, Toast.LENGTH_SHORT).show();
+        });
 
 
         mNewsButton.setOnLongClickListener((v)->{
