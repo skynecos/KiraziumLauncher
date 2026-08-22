@@ -5,6 +5,7 @@ import static net.kdt.pojavlaunch.Architecture.archAsString;
 import static net.kdt.pojavlaunch.PojavApplication.sExecutorService;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.res.AssetManager;
 import android.util.Log;
 
@@ -12,6 +13,7 @@ import com.kdt.mcgui.ProgressLayout;
 
 import net.kdt.pojavlaunch.Tools;
 import net.kdt.pojavlaunch.multirt.MultiRTUtils;
+import net.kdt.pojavlaunch.prefs.LauncherPreferences;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
@@ -23,6 +25,10 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
 public class AsyncAssetManager {
+
+    private static final String KIRAZIUM_BEDROCK_CONTROLS = "kirazium_bedrock.json";
+    private static final String KIRAZIUM_BEDROCK_CONTROLS_MARKER =
+            "kiraziumBedrockControlsV1Installed";
 
     private AsyncAssetManager(){}
 
@@ -66,6 +72,7 @@ public class AsyncAssetManager {
         sExecutorService.execute(() -> {
             try {
                 Tools.copyAssetFile(ctx, "default.json", Tools.CTRLMAP_PATH, false);
+                installKiraziumBedrockControls(ctx);
                 Tools.copyAssetFile(ctx, "launcher_profiles.json", Tools.DIR_GAME_NEW, false);
                 Tools.copyAssetFile(ctx,"resolv.conf",Tools.DIR_DATA, false);
             } catch (IOException e) {
@@ -73,6 +80,32 @@ public class AsyncAssetManager {
             }
             ProgressLayout.clearProgress(ProgressLayout.EXTRACT_SINGLE_FILES);
         });
+    }
+
+    /**
+     * Installs Kirazium's Bedrock-style touch layout and selects it once for users who are still
+     * using MojoLauncher's stock controls. An explicitly selected custom layout is never replaced.
+     */
+    private static void installKiraziumBedrockControls(Context ctx) throws IOException {
+        Tools.copyAssetFile(ctx, KIRAZIUM_BEDROCK_CONTROLS, Tools.CTRLMAP_PATH, false);
+
+        SharedPreferences preferences = LauncherPreferences.DEFAULT_PREF;
+        if (preferences == null ||
+                preferences.getBoolean(KIRAZIUM_BEDROCK_CONTROLS_MARKER, false)) return;
+
+        String currentControlPath = preferences.getString("defaultCtrl", Tools.CTRLDEF_FILE);
+        boolean usesStockControls = !preferences.contains("defaultCtrl") ||
+                Tools.CTRLDEF_FILE.equals(currentControlPath);
+
+        SharedPreferences.Editor editor = preferences.edit()
+                .putBoolean(KIRAZIUM_BEDROCK_CONTROLS_MARKER, true);
+        if (usesStockControls) {
+            String bedrockControlPath = new File(
+                    Tools.CTRLMAP_PATH, KIRAZIUM_BEDROCK_CONTROLS).getAbsolutePath();
+            editor.putString("defaultCtrl", bedrockControlPath);
+            LauncherPreferences.PREF_DEFAULTCTRL_PATH = bedrockControlPath;
+        }
+        editor.apply();
     }
 
     public static void unpackComponents(Context ctx){
