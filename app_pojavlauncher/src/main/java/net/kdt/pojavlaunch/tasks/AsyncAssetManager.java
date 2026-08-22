@@ -30,8 +30,10 @@ public class AsyncAssetManager {
     private static final String KIRAZIUM_BEDROCK_CONTROLS_MARKER =
             "kiraziumBedrockControlsV1Installed";
     private static final String KIRAZIUM_BEDROCK_SCALE_MARKER =
-            "kiraziumBedrockControlsScaleV1Installed";
-    private static final int KIRAZIUM_BEDROCK_BUTTON_SCALE = 55;
+            "kiraziumBedrockControlsAdaptiveScaleV1Installed";
+    private static final int KIRAZIUM_BEDROCK_PHONE_SCALE = 55;
+    private static final int KIRAZIUM_BEDROCK_TABLET_SCALE = 85;
+    private static final int KIRAZIUM_BEDROCK_LARGE_TABLET_SCALE = 100;
 
     private AsyncAssetManager(){}
 
@@ -118,11 +120,19 @@ public class AsyncAssetManager {
         if (!scaleInstalled) {
             editor.putBoolean(KIRAZIUM_BEDROCK_SCALE_MARKER, true);
             if (usesBedrockControls) {
-                editor.putInt("buttonscale", KIRAZIUM_BEDROCK_BUTTON_SCALE);
-                LauncherPreferences.PREF_BUTTONSIZE = KIRAZIUM_BEDROCK_BUTTON_SCALE;
+                int buttonScale = getKiraziumBedrockButtonScale(ctx);
+                editor.putInt("buttonscale", buttonScale);
+                LauncherPreferences.PREF_BUTTONSIZE = buttonScale;
             }
         }
         editor.apply();
+    }
+
+    private static int getKiraziumBedrockButtonScale(Context context) {
+        int smallestWidthDp = context.getResources().getConfiguration().smallestScreenWidthDp;
+        if (smallestWidthDp >= 720) return KIRAZIUM_BEDROCK_LARGE_TABLET_SCALE;
+        if (smallestWidthDp >= 600) return KIRAZIUM_BEDROCK_TABLET_SCALE;
+        return KIRAZIUM_BEDROCK_PHONE_SCALE;
     }
 
     public static void unpackComponents(Context ctx){
