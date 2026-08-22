@@ -30,7 +30,7 @@ import net.kdt.pojavlaunch.PojavApplication;
 import net.kdt.pojavlaunch.Tools;
 import net.kdt.pojavlaunch.instances.Instance;
 import net.kdt.pojavlaunch.instances.Instances;
-import net.kdt.pojavlaunch.instances.KiraziumBootstrap;
+import net.kdt.pojavlaunch.instances.SelectedProfileInfo;
 import net.kdt.pojavlaunch.utils.DownloadUtils;
 import net.kdt.pojavlaunch.utils.FileUtils;
 
@@ -46,7 +46,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-/** Kirazium-styled Modrinth Fabric mod browser and installer. */
+/** Kirazium-styled Modrinth mod browser tied to the currently selected profile. */
 public class ModStoreFragment extends Fragment {
     public static final String TAG = "ModStoreFragment";
 
@@ -56,6 +56,7 @@ public class ModStoreFragment extends Fragment {
     private EditText mSearchInput;
     private ProgressBar mProgress;
     private TextView mStatus;
+    private TextView mSubtitle;
     private ModAdapter mAdapter;
     private int mSearchGeneration;
 
@@ -76,6 +77,7 @@ public class ModStoreFragment extends Fragment {
         mSearchInput = view.findViewById(R.id.mod_store_search);
         mProgress = view.findViewById(R.id.mod_store_progress);
         mStatus = view.findViewById(R.id.mod_store_status);
+        mSubtitle = view.findViewById(R.id.mod_store_subtitle);
 
         mAdapter = new ModAdapter();
         list.setLayoutManager(new LinearLayoutManager(requireContext()));
@@ -104,8 +106,30 @@ public class ModStoreFragment extends Fragment {
         final String cleanQuery = query == null ? "" : query.trim();
         PojavApplication.sExecutorService.execute(() -> {
             try {
+                Instance instance = Instances.loadSelectedInstance();
+                if (instance == null) throw new IOException("No selected instance");
+                SelectedProfileInfo profile = SelectedProfileInfo.resolve(instance);
+
+                Tools.runOnUiThread(() -> {
+                    if (!isAdded() || generation != mSearchGeneration) return;
+                    mSubtitle.setText(getString(R.string.mods_profile_subtitle,
+                            profile.gameVersion, profile.loader.displayName));
+                });
+
+                if (!profile.supportsMods()) {
+                    Tools.runOnUiThread(() -> {
+                        if (!isAdded() || generation != mSearchGeneration) return;
+                        mProgress.setVisibility(View.GONE);
+                        mAdapter.setItems(new ArrayList<>());
+                        mStatus.setText(R.string.mods_no_loader);
+                        mStatus.setVisibility(View.VISIBLE);
+                    });
+                    return;
+                }
+
                 String facets = "[[\"project_type:mod\"],[\"versions:" +
-                        KiraziumBootstrap.GAME_VERSION + "\"],[\"categories:fabric\"]]";
+                        profile.gameVersion + "\"],[\"categories:" +
+                        profile.loader.modrinthId + "\"]]";
                 String url = MODRINTH_API + "/search?limit=" + RESULT_LIMIT +
                         "&index=downloads&query=" + Uri.encode(cleanQuery) +
                         "&facets=" + Uri.encode(facets);
@@ -148,7 +172,7 @@ public class ModStoreFragment extends Fragment {
                     if (!isAdded() || generation != mSearchGeneration) return;
                     mProgress.setVisibility(View.GONE);
                     mAdapter.setItems(new ArrayList<>());
-                    mStatus.setText(R.string.mods_error);
+                    mStatus.setText(R.string.store_profile_unknown);
                     mStatus.setVisibility(View.VISIBLE);
                 });
             }
@@ -163,14 +187,16 @@ public class ModStoreFragment extends Fragment {
             try {
                 Instance instance = Instances.loadSelectedInstance();
                 if (instance == null) throw new IOException("No selected instance");
+                SelectedProfileInfo profile = SelectedProfileInfo.resolve(instance);
+                if (!profile.supportsMods()) throw new IOException("Selected profile has no mod loader");
 
                 File modsDir = new File(instance.getGameDirectory(), "mods");
                 FileUtils.ensureDirectory(modsDir);
 
-                JSONObject version = findCompatibleVersion(mod.projectId);
-                if (version == null) throw new IOException("No compatible Fabric version");
+                JSONObject version = findCompatibleVersion(mod.projectId, profile);
+                if (version == null) throw new IOException("No compatible mod version");
 
-                installVersionWithDependencies(version, modsDir, new HashSet<>());
+                installVersionWithDependencies(version, modsDir, profile, new HashSet<>());
                 mInstalledProjects.add(mod.projectId);
 
                 Tools.runOnUiThread(() -> {
@@ -194,9 +220,10 @@ public class ModStoreFragment extends Fragment {
         });
     }
 
-    private JSONObject findCompatibleVersion(String projectId) throws Exception {
-        String versions = "[\"" + KiraziumBootstrap.GAME_VERSION + "\"]";
-        String loaders = "[\"fabric\"]";
+    private JSONObject findCompatibleVersion(String projectId, SelectedProfileInfo profile)
+            throws Exception {
+        String versions = "[\"" + profile.gameVersion + "\"]";
+        String loaders = "[\"" + profile.loader.modrinthId + "\"]";
         String url = MODRINTH_API + "/project/" + Uri.encode(projectId) + "/version" +
                 "?game_versions=" + Uri.encode(versions) +
                 "&loaders=" + Uri.encode(loaders) +
@@ -219,6 +246,7 @@ public class ModStoreFragment extends Fragment {
     }
 
     private void installVersionWithDependencies(JSONObject version, File modsDir,
+                                                SelectedProfileInfo profile,
                                                 Set<String> visited) throws Exception {
         String versionId = version.optString("id", "");
         if (!TextUtils.isEmpty(versionId) && !visited.add(versionId)) return;
@@ -237,13 +265,13 @@ public class ModStoreFragment extends Fragment {
                 if (!TextUtils.isEmpty(dependencyVersionId)) {
                     dependencyVersion = fetchVersion(dependencyVersionId);
                 } else if (!TextUtils.isEmpty(dependencyProjectId)) {
-                    dependencyVersion = findCompatibleVersion(dependencyProjectId);
+                    dependencyVersion = findCompatibleVersion(dependencyProjectId, profile);
                 }
 
                 if (dependencyVersion == null) {
                     throw new IOException("Required dependency is unavailable");
                 }
-                installVersionWithDependencies(dependencyVersion, modsDir, visited);
+                installVersionWithDependencies(dependencyVersion, modsDir, profile, visited);
             }
         }
 

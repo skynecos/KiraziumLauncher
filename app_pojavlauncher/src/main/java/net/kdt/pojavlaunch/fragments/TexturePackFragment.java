@@ -30,7 +30,7 @@ import net.kdt.pojavlaunch.PojavApplication;
 import net.kdt.pojavlaunch.Tools;
 import net.kdt.pojavlaunch.instances.Instance;
 import net.kdt.pojavlaunch.instances.Instances;
-import net.kdt.pojavlaunch.instances.KiraziumBootstrap;
+import net.kdt.pojavlaunch.instances.SelectedProfileInfo;
 import net.kdt.pojavlaunch.utils.DownloadUtils;
 import net.kdt.pojavlaunch.utils.FileUtils;
 
@@ -46,7 +46,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-/** A Kirazium-styled Modrinth resource-pack browser. */
+/** A Kirazium-styled Modrinth resource-pack browser tied to the selected profile. */
 public class TexturePackFragment extends Fragment {
     public static final String TAG = "TexturePackFragment";
 
@@ -56,6 +56,7 @@ public class TexturePackFragment extends Fragment {
     private EditText mSearchInput;
     private ProgressBar mProgress;
     private TextView mStatus;
+    private TextView mSubtitle;
     private TexturePackAdapter mAdapter;
     private int mSearchGeneration;
 
@@ -76,6 +77,7 @@ public class TexturePackFragment extends Fragment {
         mSearchInput = view.findViewById(R.id.texture_pack_search);
         mProgress = view.findViewById(R.id.texture_pack_progress);
         mStatus = view.findViewById(R.id.texture_pack_status);
+        mSubtitle = view.findViewById(R.id.texture_pack_subtitle);
 
         mAdapter = new TexturePackAdapter();
         list.setLayoutManager(new LinearLayoutManager(requireContext()));
@@ -104,8 +106,12 @@ public class TexturePackFragment extends Fragment {
         final String cleanQuery = query == null ? "" : query.trim();
         PojavApplication.sExecutorService.execute(() -> {
             try {
+                Instance instance = Instances.loadSelectedInstance();
+                if (instance == null) throw new IOException("No selected instance");
+                SelectedProfileInfo profile = SelectedProfileInfo.resolve(instance);
+
                 String facets = "[[\"project_type:resourcepack\"],[\"versions:" +
-                        KiraziumBootstrap.GAME_VERSION + "\"]]";
+                        profile.gameVersion + "\"]]";
                 String url = MODRINTH_API + "/search?limit=" + RESULT_LIMIT +
                         "&index=downloads&query=" + Uri.encode(cleanQuery) +
                         "&facets=" + Uri.encode(facets);
@@ -131,6 +137,8 @@ public class TexturePackFragment extends Fragment {
 
                 Tools.runOnUiThread(() -> {
                     if (!isAdded() || generation != mSearchGeneration) return;
+                    mSubtitle.setText(getString(R.string.texture_packs_profile_subtitle,
+                            profile.gameVersion));
                     mProgress.setVisibility(View.GONE);
                     mAdapter.setItems(packs);
                     if (packs.isEmpty()) {
@@ -145,7 +153,7 @@ public class TexturePackFragment extends Fragment {
                     if (!isAdded() || generation != mSearchGeneration) return;
                     mProgress.setVisibility(View.GONE);
                     mAdapter.setItems(new ArrayList<>());
-                    mStatus.setText(R.string.texture_packs_error);
+                    mStatus.setText(R.string.store_profile_unknown);
                     mStatus.setVisibility(View.VISIBLE);
                 });
             }
@@ -160,8 +168,9 @@ public class TexturePackFragment extends Fragment {
             try {
                 Instance instance = Instances.loadSelectedInstance();
                 if (instance == null) throw new IOException("No selected instance");
+                SelectedProfileInfo profile = SelectedProfileInfo.resolve(instance);
 
-                JSONObject file = findCompatibleFile(pack.projectId);
+                JSONObject file = findCompatibleFile(pack.projectId, profile.gameVersion);
                 if (file == null) {
                     Tools.runOnUiThread(() -> {
                         if (!isAdded()) return;
@@ -215,8 +224,8 @@ public class TexturePackFragment extends Fragment {
         });
     }
 
-    private JSONObject findCompatibleFile(String projectId) throws Exception {
-        String versions = "[\"" + KiraziumBootstrap.GAME_VERSION + "\"]";
+    private JSONObject findCompatibleFile(String projectId, String gameVersion) throws Exception {
+        String versions = "[\"" + gameVersion + "\"]";
         String loaders = "[\"minecraft\"]";
         String url = MODRINTH_API + "/project/" + Uri.encode(projectId) + "/version" +
                 "?game_versions=" + Uri.encode(versions) +

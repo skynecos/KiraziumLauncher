@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mods_no_loader">Bu profil mod yükleyicisi kullanmıyor. Önce Fabric, Forge, NeoForge veya Quilt kur.</string>
+    <string name="mods_profile_subtitle">%1$s • %2$s uyumlu modlar</string>
+    <string name="texture_packs_profile_subtitle">%1$s uyumlu texture packler</string>
+    <string name="store_profile_unknown">Seçili profilin Minecraft sürümü belirlenemedi.</string>
+</resources>
