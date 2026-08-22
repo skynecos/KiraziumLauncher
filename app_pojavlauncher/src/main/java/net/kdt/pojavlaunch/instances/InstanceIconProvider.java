@@ -23,7 +23,7 @@ public class InstanceIconProvider {
     private static final Map<String, Integer> sStaticIcons = new HashMap<>();
 
     static {
-        sStaticIcons.put("default", R.drawable.ic_mojo_full);
+        sStaticIcons.put("default", R.drawable.ic_kirazium_launcher);
         sStaticIcons.put("kirazium", R.drawable.ic_kirazium_launcher);
         sStaticIcons.put("fabric", R.drawable.ic_fabric);
         sStaticIcons.put("quilt", R.drawable.ic_quilt);
