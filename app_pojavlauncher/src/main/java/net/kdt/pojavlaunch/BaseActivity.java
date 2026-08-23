@@ -11,6 +11,8 @@ import net.kdt.pojavlaunch.game.GameView;
 import net.kdt.pojavlaunch.prefs.LauncherPreferences;
 import net.kdt.pojavlaunch.utils.*;
 
+import git.artdeell.mojo.R;
+
 import static net.kdt.pojavlaunch.prefs.LauncherPreferences.PREF_IGNORE_NOTCH;
 
 public abstract class BaseActivity extends AppCompatActivity {
