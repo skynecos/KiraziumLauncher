@@ -19,6 +19,8 @@ public abstract class BaseActivity extends AppCompatActivity {
     private static final String LOW_GRAPHICS_KEY = "kiraziumLowGraphicsMode";
     private static final String USER_RESOLUTION_KEY = "kiraziumUserResolutionRatio";
     private static final String RESOLUTION_KEY = "resolutionRatio";
+    private static final String BUTTON_SCALE_KEY = "buttonscale";
+    private static final String AUTO_BUTTON_SCALE_MARKER = "kiraziumAutoButtonScaleInitializedV1";
 
     @Override
     protected void attachBaseContext(Context newBase) {
@@ -29,6 +31,7 @@ public abstract class BaseActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         LocaleUtils.setLocale(this);
+        applyKiraziumButtonScaleDefault();
         applyKiraziumResolutionOverride();
         Tools.setInsetsMode(this, setFullscreen(), shouldIgnoreNotch());
         Tools.getDisplayMetrics(this);
@@ -55,9 +58,46 @@ public abstract class BaseActivity extends AppCompatActivity {
     @Override
     protected void onPostResume() {
         super.onPostResume();
+        applyKiraziumButtonScaleDefault();
         applyKiraziumResolutionOverride();
         Tools.setInsetsMode(this, setFullscreen(), shouldIgnoreNotch());
         refreshLayoutAfterInsets();
+    }
+
+    /**
+     * Pick a sane touch-control size once per installation. Old 80/100 defaults are migrated,
+     * but after this marker is written the user's own button-scale choice is never overwritten.
+     */
+    private void applyKiraziumButtonScaleDefault() {
+        SharedPreferences preferences = LauncherPreferences.DEFAULT_PREF;
+        if (preferences == null || preferences.getBoolean(AUTO_BUTTON_SCALE_MARKER, false)) return;
+
+        int currentScale = preferences.getInt(BUTTON_SCALE_KEY, 100);
+        int selectedScale = currentScale;
+        if (!preferences.contains(BUTTON_SCALE_KEY) || currentScale == 80 || currentScale == 100) {
+            selectedScale = findAutomaticButtonScale();
+        }
+
+        preferences.edit()
+                .putInt(BUTTON_SCALE_KEY, selectedScale)
+                .putBoolean(AUTO_BUTTON_SCALE_MARKER, true)
+                .apply();
+        LauncherPreferences.PREF_BUTTONSIZE = selectedScale;
+    }
+
+    private int findAutomaticButtonScale() {
+        int smallestWidthDp = getResources().getConfiguration().smallestScreenWidthDp;
+        if (smallestWidthDp <= 0) {
+            android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
+            smallestWidthDp = Math.round(
+                    Math.min(metrics.widthPixels, metrics.heightPixels) / metrics.density);
+        }
+
+        if (smallestWidthDp < 360) return 55;
+        if (smallestWidthDp < 400) return 60;
+        if (smallestWidthDp < 480) return 65;
+        if (smallestWidthDp < 600) return 70;
+        return 80;
     }
 
     private void applyKiraziumResolutionOverride() {

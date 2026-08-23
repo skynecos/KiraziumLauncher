@@ -9,8 +9,8 @@
 
 
     <integer name="button_scale_seekbar_increment">5</integer>
-    <integer name="button_scale_seekbar_min">80</integer>
-    <integer name="button_scale_seekbar_max">250</integer>
+    <integer name="button_scale_seekbar_min">40</integer>
+    <integer name="button_scale_seekbar_max">120</integer>
 
     <integer name="mouse_scale_seekbar_increment">5</integer>
     <integer name="mouse_scale_seekbar_min">25</integer>
