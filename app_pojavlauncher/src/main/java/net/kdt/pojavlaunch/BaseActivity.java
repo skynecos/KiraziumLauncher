@@ -18,6 +18,7 @@ import static net.kdt.pojavlaunch.prefs.LauncherPreferences.PREF_IGNORE_NOTCH;
 public abstract class BaseActivity extends AppCompatActivity {
     private static final String LOW_GRAPHICS_KEY = "kiraziumLowGraphicsMode";
     private static final String USER_RESOLUTION_KEY = "kiraziumUserResolutionRatio";
+    private static final String RESOLUTION_KEY = "resolutionRatio";
 
     @Override
     protected void attachBaseContext(Context newBase) {
@@ -69,6 +70,12 @@ public abstract class BaseActivity extends AppCompatActivity {
 
         int ratio = preferences.getInt(USER_RESOLUTION_KEY, 80);
         ratio = Math.max(5, Math.min(100, ratio));
+
+        // Low graphics used to force resolutionRatio back to 80 before every launch.
+        // Keep the user's explicit value authoritative instead.
+        if (preferences.getInt(RESOLUTION_KEY, ratio) != ratio) {
+            preferences.edit().putInt(RESOLUTION_KEY, ratio).apply();
+        }
         LauncherPreferences.PREF_SCALE_FACTOR = ratio / 100f;
     }
 
