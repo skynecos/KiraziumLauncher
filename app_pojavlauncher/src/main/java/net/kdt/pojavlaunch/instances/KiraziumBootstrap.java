@@ -53,11 +53,12 @@ public final class KiraziumBootstrap {
             "simple-voice-chat"
     };
     private static final String[] RESOURCE_PACK_COMPAT_MODS = new String[] {
-            "cit-resewn-continuation"
+            "cit-resewn-continuation",
+            "continuity"
     };
     private static final String BOOTSTRAP_MARKER = ".kirazium-bootstrap-v2";
     private static final String RESOURCE_PACK_COMPAT_MARKER =
-            ".kirazium-resource-pack-compat-v2";
+            ".kirazium-resource-pack-compat-v3";
     private static final String LANGUAGE_MARKER = ".kirazium-language-tr-v1";
     private static final String OPTIMIZATION_MARKER = ".kirazium-low-end-v2";
     public static final String LOW_GRAPHICS_PREFERENCE = "kiraziumLowGraphicsMode";
