@@ -73,6 +73,7 @@ public class ModStoreFragment extends Fragment {
 
         ImageButton backButton = view.findViewById(R.id.mod_store_back);
         ImageButton searchButton = view.findViewById(R.id.mod_store_search_button);
+        View activeModsCard = view.findViewById(R.id.active_mods_card);
         RecyclerView list = view.findViewById(R.id.mod_store_list);
         mSearchInput = view.findViewById(R.id.mod_store_search);
         mProgress = view.findViewById(R.id.mod_store_progress);
@@ -84,6 +85,9 @@ public class ModStoreFragment extends Fragment {
         list.setAdapter(mAdapter);
 
         backButton.setOnClickListener(v -> Tools.removeCurrentFragment(requireActivity()));
+        activeModsCard.setOnClickListener(v -> Tools.swapFragment(
+                requireActivity(), LocalContentFragment.class, LocalContentFragment.TAG_MODS,
+                LocalContentFragment.createArgs(LocalContentFragment.MODE_MODS)));
         searchButton.setOnClickListener(v -> searchMods(mSearchInput.getText().toString()));
         mSearchInput.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
