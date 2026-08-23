@@ -6,7 +6,6 @@ import static net.kdt.pojavlaunch.Tools.shareLog;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
-import android.util.TypedValue;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageButton;
@@ -18,12 +17,8 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.widget.SwitchCompat;
-import androidx.constraintlayout.widget.ConstraintLayout;
-import androidx.constraintlayout.widget.ConstraintSet;
-import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 
-import com.kdt.mcgui.LauncherMenuButton;
 import com.kdt.mcgui.mcVersionSpinner;
 
 import net.kdt.pojavlaunch.CustomControlsActivity;
@@ -87,7 +82,6 @@ public class MainMenuFragment extends Fragment {
                 requireActivity(), TexturePackFragment.class, TexturePackFragment.TAG, null));
         mModsButton.setOnClickListener(v -> Tools.swapFragment(
                 requireActivity(), ModStoreFragment.class, ModStoreFragment.TAG, null));
-        setupActiveModsButton(mModsButton, mCustomControlButton);
         mCustomControlButton.setOnClickListener(v -> startActivity(new Intent(requireContext(), CustomControlsActivity.class)));
         mInstallJarButton.setOnClickListener(v -> runInstallerWithConfirmation());
         mEditProfileButton.setOnClickListener(v -> mVersionSpinner.openProfileEditor(requireActivity()));
@@ -112,59 +106,10 @@ public class MainMenuFragment extends Fragment {
                     : R.string.low_graphics_disabled, Toast.LENGTH_SHORT).show();
         });
 
-
         mNewsButton.setOnLongClickListener((v)->{
             Tools.swapFragment(requireActivity(), GamepadMapperFragment.class, GamepadMapperFragment.TAG, null);
             return true;
         });
-    }
-
-    private void setupActiveModsButton(Button modsButton, Button customControlButton) {
-        if (!(modsButton.getParent() instanceof ConstraintLayout)) return;
-        ConstraintLayout parent = (ConstraintLayout) modsButton.getParent();
-
-        LauncherMenuButton activeMods = createContentMenuButton(
-                parent, R.string.active_mods_menu, R.drawable.ic_px_java);
-        activeMods.setOnClickListener(v -> Tools.swapFragment(
-                requireActivity(), LocalContentFragment.class, LocalContentFragment.TAG_MODS,
-                LocalContentFragment.createArgs(LocalContentFragment.MODE_MODS)));
-
-        ConstraintSet constraints = new ConstraintSet();
-        constraints.clone(parent);
-        constraints.connect(activeMods.getId(), ConstraintSet.TOP,
-                modsButton.getId(), ConstraintSet.BOTTOM);
-        constraints.connect(activeMods.getId(), ConstraintSet.START,
-                ConstraintSet.PARENT_ID, ConstraintSet.START);
-        constraints.connect(activeMods.getId(), ConstraintSet.END,
-                ConstraintSet.PARENT_ID, ConstraintSet.END);
-
-        constraints.clear(customControlButton.getId(), ConstraintSet.TOP);
-        constraints.connect(customControlButton.getId(), ConstraintSet.TOP,
-                activeMods.getId(), ConstraintSet.BOTTOM);
-        constraints.applyTo(parent);
-    }
-
-    private LauncherMenuButton createContentMenuButton(ConstraintLayout parent,
-                                                        int textResource,
-                                                        int iconResource) {
-        LauncherMenuButton button = new LauncherMenuButton(requireContext());
-        button.setId(View.generateViewId());
-        button.setText(textResource);
-        button.setTextColor(ContextCompat.getColor(requireContext(), R.color.primary_text));
-        button.setAllCaps(false);
-        button.setCompoundDrawablesRelativeWithIntrinsicBounds(iconResource, 0, 0, 0);
-
-        TypedValue selectable = new TypedValue();
-        if (requireContext().getTheme().resolveAttribute(
-                android.R.attr.selectableItemBackground, selectable, true) &&
-                selectable.resourceId != 0) {
-            button.setBackgroundResource(selectable.resourceId);
-        }
-
-        int height = getResources().getDimensionPixelSize(R.dimen._66sdp);
-        button.setLayoutParams(new ConstraintLayout.LayoutParams(0, height));
-        parent.addView(button);
-        return button;
     }
 
     private void setupRamControl(View view) {
