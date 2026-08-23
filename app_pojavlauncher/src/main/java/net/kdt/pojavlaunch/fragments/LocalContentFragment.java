@@ -1,6 +1,9 @@
 package net.kdt.pojavlaunch.fragments;
 
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.os.Bundle;
+import android.util.LruCache;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -42,6 +45,7 @@ public class LocalContentFragment extends Fragment {
     private TextView mStatus;
     private LocalContentAdapter mAdapter;
     private int mLoadGeneration;
+    private final LruCache<String, Bitmap> mLocalIconCache = new LruCache<>(48);
 
     public LocalContentFragment() {
         super(R.layout.fragment_local_content);
@@ -170,6 +174,38 @@ public class LocalContentFragment extends Fragment {
         return enabled ? R.string.local_mod_enabled : R.string.local_mod_disabled;
     }
 
+    private void loadLocalIcon(LocalContentManager.Entry entry, ImageView imageView) {
+        boolean mod = mMode == MODE_MODS;
+        int fallback = mod ? R.drawable.ic_px_java : R.drawable.ic_px_image;
+        String key = (mod ? "mod:" : "pack:") + entry.file.getAbsolutePath() + ":" +
+                entry.file.lastModified();
+
+        imageView.setTag(key);
+        imageView.setImageResource(fallback);
+
+        Bitmap cached = mLocalIconCache.get(key);
+        if (cached != null) {
+            imageView.setImageBitmap(cached);
+            return;
+        }
+
+        PojavApplication.sExecutorService.execute(() -> {
+            try {
+                byte[] bytes = LocalContentManager.loadIconBytes(entry, mod);
+                if (bytes == null || bytes.length == 0) return;
+                Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                if (bitmap == null) return;
+                mLocalIconCache.put(key, bitmap);
+                Tools.runOnUiThread(() -> {
+                    if (!isAdded()) return;
+                    if (key.equals(imageView.getTag())) imageView.setImageBitmap(bitmap);
+                });
+            } catch (Exception ignored) {
+                // Keep the built-in icon only when the pack/mod does not provide a readable image.
+            }
+        });
+    }
+
     private final class LocalContentAdapter
             extends RecyclerView.Adapter<LocalContentViewHolder> {
         private final List<LocalContentManager.Entry> mItems = new ArrayList<>();
@@ -193,9 +229,7 @@ public class LocalContentFragment extends Fragment {
             LocalContentManager.Entry entry = mItems.get(position);
             holder.title.setText(entry.displayName);
             holder.file.setText(entry.fileName);
-            holder.icon.setImageResource(mMode == MODE_PACKS
-                    ? R.drawable.ic_px_image
-                    : R.drawable.ic_px_java);
+            loadLocalIcon(entry, holder.icon);
             holder.status.setText(entry.enabled
                     ? R.string.local_content_enabled
                     : R.string.local_content_disabled);
