@@ -5,6 +5,8 @@ import android.app.ProgressDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -37,7 +39,7 @@ public final class KiraziumUpdater {
     private static final String PREFS_NAME = "kirazium_updater";
     private static final String KEY_LAST_CHECK = "last_check";
     private static final String KEY_PENDING_APK = "pending_apk";
-    private static final long CHECK_INTERVAL_MS = 3L * 60L * 60L * 1000L;
+    private static final long CHECK_INTERVAL_MS = 10L * 60L * 1000L;
     private static final AtomicBoolean CHECK_RUNNING = new AtomicBoolean(false);
     private static final AtomicBoolean DOWNLOAD_RUNNING = new AtomicBoolean(false);
 
@@ -69,8 +71,9 @@ public final class KiraziumUpdater {
                 String apkUrl = findApkUrl(release.optJSONArray("assets"));
                 if (remoteBuild < 0 || apkUrl == null || remoteBuild <= currentBuild) return;
 
+                long finalRemoteBuild = remoteBuild;
                 activity.runOnUiThread(() -> showUpdateDialog(
-                        activity, remoteVersion, currentBuild, apkUrl));
+                        activity, remoteVersion, currentBuild, finalRemoteBuild, apkUrl));
             } catch (Exception ignored) {
                 // Update checks must never block or crash the launcher.
             } finally {
@@ -95,15 +98,24 @@ public final class KiraziumUpdater {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
                 !activity.getPackageManager().canRequestPackageInstalls()) return;
 
-        launchPackageInstaller(activity, apk);
+        try {
+            verifyDownloadedApk(activity, apk);
+            launchPackageInstaller(activity, apk);
+        } catch (Exception error) {
+            prefs(activity).edit().remove(KEY_PENDING_APK).apply();
+            apk.delete();
+            Toast.makeText(activity, "Güncelleme APK'sı doğrulanamadı.", Toast.LENGTH_LONG).show();
+        }
     }
 
     private static void showUpdateDialog(Activity activity, String remoteVersion,
-                                         long currentBuild, String apkUrl) {
+                                         long currentBuild, long remoteBuild, String apkUrl) {
         if (activity.isFinishing() || (Build.VERSION.SDK_INT >= 17 && activity.isDestroyed())) return;
         new AlertDialog.Builder(activity)
                 .setTitle("Kirazium güncellemesi hazır")
-                .setMessage("Yeni sürüm: " + remoteVersion + "\nMevcut build: " + currentBuild +
+                .setMessage("Yeni sürüm: " + remoteVersion +
+                        "\nMevcut build: " + currentBuild +
+                        "\nYeni build: " + remoteBuild +
                         "\n\nAPK otomatik indirilecek. Son adımda Android'in Güncelle/Yükle onayına dokunman yeterli.")
                 .setPositiveButton("İndir ve Güncelle", (dialog, which) ->
                         downloadUpdate(activity, remoteVersion, apkUrl))
@@ -136,6 +148,10 @@ public final class KiraziumUpdater {
                 }
 
                 output = new File(downloadDir, "KiraziumLauncher-" + version + ".apk");
+                if (output.isFile() && !output.delete()) {
+                    throw new IllegalStateException("Eski güncelleme dosyası silinemedi.");
+                }
+
                 connection = openConnection(apkUrl);
                 if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
                     throw new IllegalStateException("HTTP " + connection.getResponseCode());
@@ -165,7 +181,7 @@ public final class KiraziumUpdater {
                     fileOutput.flush();
                 }
 
-                verifyPackageName(activity, output);
+                verifyDownloadedApk(activity, output);
                 prefs(activity).edit().putString(KEY_PENDING_APK, output.getAbsolutePath()).apply();
                 File readyApk = output;
                 activity.runOnUiThread(() -> {
@@ -186,12 +202,57 @@ public final class KiraziumUpdater {
         });
     }
 
-    private static void verifyPackageName(Activity activity, File apk) {
-        PackageInfo archive = activity.getPackageManager().getPackageArchiveInfo(apk.getAbsolutePath(), 0);
+    private static void verifyDownloadedApk(Activity activity, File apk) throws Exception {
+        PackageManager packageManager = activity.getPackageManager();
+        int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                ? PackageManager.GET_SIGNING_CERTIFICATES
+                : PackageManager.GET_SIGNATURES;
+
+        PackageInfo archive = packageManager.getPackageArchiveInfo(apk.getAbsolutePath(), flags);
+        PackageInfo installed = packageManager.getPackageInfo(activity.getPackageName(), flags);
+
         if (archive == null || archive.packageName == null ||
                 !activity.getPackageName().equals(archive.packageName)) {
             throw new SecurityException("APK paket kimliği Kirazium Launcher ile eşleşmiyor.");
         }
+
+        long archiveVersion = getVersionCode(archive);
+        long installedVersion = getVersionCode(installed);
+        if (archiveVersion <= installedVersion) {
+            throw new SecurityException("İndirilen APK mevcut sürümden daha yeni değil.");
+        }
+
+        Signature[] archiveSignatures = getSignatures(archive);
+        Signature[] installedSignatures = getSignatures(installed);
+        if (!hasMatchingSignature(archiveSignatures, installedSignatures)) {
+            throw new SecurityException("APK imzası mevcut Kirazium Launcher imzasıyla eşleşmiyor.");
+        }
+    }
+
+    private static Signature[] getSignatures(PackageInfo info) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            if (info.signingInfo == null) return null;
+            return info.signingInfo.hasMultipleSigners()
+                    ? info.signingInfo.getApkContentsSigners()
+                    : info.signingInfo.getSigningCertificateHistory();
+        }
+        return info.signatures;
+    }
+
+    private static boolean hasMatchingSignature(Signature[] first, Signature[] second) {
+        if (first == null || second == null || first.length == 0 || second.length == 0) return false;
+        for (Signature left : first) {
+            for (Signature right : second) {
+                if (left != null && left.equals(right)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static long getVersionCode(PackageInfo info) {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                ? info.getLongVersionCode()
+                : info.versionCode;
     }
 
     private static void installOrRequestPermission(Activity activity, File apk) {
@@ -273,9 +334,7 @@ public final class KiraziumUpdater {
     private static long getCurrentVersionCode(Activity activity) {
         try {
             PackageInfo info = activity.getPackageManager().getPackageInfo(activity.getPackageName(), 0);
-            return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-                    ? info.getLongVersionCode()
-                    : info.versionCode;
+            return getVersionCode(info);
         } catch (Exception ignored) {
             return -1L;
         }
