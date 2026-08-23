@@ -2,6 +2,7 @@ package net.kdt.pojavlaunch.prefs;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.res.TypedArray;
 import android.graphics.Color;
 import android.util.AttributeSet;
@@ -16,6 +17,10 @@ import androidx.preference.SeekBarPreference;
 import git.artdeell.mojo.R;
 
 public class CustomSeekBarPreference extends SeekBarPreference {
+
+    private static final String RESOLUTION_KEY = "resolutionRatio";
+    private static final String LOW_GRAPHICS_KEY = "kiraziumLowGraphicsMode";
+    private static final String USER_RESOLUTION_KEY = "kiraziumUserResolutionRatio";
 
     /** The suffix displayed */
     private String mSuffix = "";
@@ -59,6 +64,18 @@ public class CustomSeekBarPreference extends SeekBarPreference {
 
     @Override
     public void onBindViewHolder(@NonNull PreferenceViewHolder view) {
+        if (RESOLUTION_KEY.equals(getKey()) && getPreferenceManager() != null) {
+            SharedPreferences preferences = getPreferenceManager().getSharedPreferences();
+            if (preferences != null &&
+                    preferences.getBoolean(LOW_GRAPHICS_KEY, false) &&
+                    preferences.contains(USER_RESOLUTION_KEY)) {
+                int saved = Math.max(mMin, Math.min(getMax(),
+                        preferences.getInt(USER_RESOLUTION_KEY, getValue())));
+                if (getValue() != saved) setValue(saved);
+                LauncherPreferences.PREF_SCALE_FACTOR = saved / 100f;
+            }
+        }
+
         super.onBindViewHolder(view);
         TextView titleTextView = (TextView) view.findViewById(android.R.id.title);
         titleTextView.setTextColor(Color.WHITE);
@@ -91,7 +108,16 @@ public class CustomSeekBarPreference extends SeekBarPreference {
                 progress *= getSeekBarIncrement();
                 progress -= mMin;
 
-                setValue(progress + mMin);
+                int value = progress + mMin;
+                setValue(value);
+
+                if (RESOLUTION_KEY.equals(getKey()) && getPreferenceManager() != null) {
+                    SharedPreferences preferences = getPreferenceManager().getSharedPreferences();
+                    if (preferences != null && preferences.getBoolean(LOW_GRAPHICS_KEY, false)) {
+                        preferences.edit().putInt(USER_RESOLUTION_KEY, value).apply();
+                    }
+                    LauncherPreferences.PREF_SCALE_FACTOR = value / 100f;
+                }
                 updateTextViewWithSuffix();
             }
         });

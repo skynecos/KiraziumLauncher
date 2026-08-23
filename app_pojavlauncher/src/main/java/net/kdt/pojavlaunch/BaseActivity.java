@@ -2,12 +2,20 @@ package net.kdt.pojavlaunch;
 
 import android.content.*;
 import android.os.*;
+import android.view.View;
+
 import androidx.appcompat.app.*;
+
+import net.kdt.pojavlaunch.customcontrols.ControlLayout;
+import net.kdt.pojavlaunch.game.GameView;
+import net.kdt.pojavlaunch.prefs.LauncherPreferences;
 import net.kdt.pojavlaunch.utils.*;
 
 import static net.kdt.pojavlaunch.prefs.LauncherPreferences.PREF_IGNORE_NOTCH;
 
 public abstract class BaseActivity extends AppCompatActivity {
+    private static final String LOW_GRAPHICS_KEY = "kiraziumLowGraphicsMode";
+    private static final String USER_RESOLUTION_KEY = "kiraziumUserResolutionRatio";
 
     @Override
     protected void attachBaseContext(Context newBase) {
@@ -18,6 +26,7 @@ public abstract class BaseActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         LocaleUtils.setLocale(this);
+        applyKiraziumResolutionOverride();
         Tools.setInsetsMode(this, setFullscreen(), shouldIgnoreNotch());
         Tools.getDisplayMetrics(this);
     }
@@ -43,8 +52,47 @@ public abstract class BaseActivity extends AppCompatActivity {
     @Override
     protected void onPostResume() {
         super.onPostResume();
+        applyKiraziumResolutionOverride();
         Tools.setInsetsMode(this, setFullscreen(), shouldIgnoreNotch());
-        Tools.getDisplayMetrics(this);
+        refreshLayoutAfterInsets();
+    }
+
+    private void applyKiraziumResolutionOverride() {
+        SharedPreferences preferences = LauncherPreferences.DEFAULT_PREF;
+        if (preferences == null ||
+                !preferences.getBoolean(LOW_GRAPHICS_KEY, false) ||
+                !preferences.contains(USER_RESOLUTION_KEY)) {
+            return;
+        }
+
+        int ratio = preferences.getInt(USER_RESOLUTION_KEY, 80);
+        ratio = Math.max(5, Math.min(100, ratio));
+        LauncherPreferences.PREF_SCALE_FACTOR = ratio / 100f;
+    }
+
+    /**
+     * Insets and display-cutout changes are asynchronous on modern Android. Re-measure the game
+     * surface and touch controls once Android has applied the new safe-area/fullscreen geometry.
+     */
+    private void refreshLayoutAfterInsets() {
+        View decorView = getWindow().getDecorView();
+        decorView.requestApplyInsets();
+        decorView.requestLayout();
+        decorView.post(() -> {
+            Tools.getDisplayMetrics(this);
+
+            View content = findViewById(android.R.id.content);
+            if (content != null) content.requestLayout();
+
+            ControlLayout controls = findViewById(R.id.main_control_layout);
+            if (controls == null) return;
+            controls.requestLayout();
+            controls.post(() -> {
+                controls.refreshControlButtonPositions();
+                GameView gameView = controls.findViewById(R.id.main_game_render_view);
+                if (gameView != null) gameView.refreshSize();
+            });
+        });
     }
 
     /** @return Whether or not the notch should be ignored */

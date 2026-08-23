@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <integer name="resolution_seekbar_increment">5</integer>
-    <integer name="resolution_seekbar_min">25</integer>
+    <integer name="resolution_seekbar_min">5</integer>
 
     <integer name="gesture_delay_seekbar_increment">10</integer>
     <integer name="gesture_delay_seekbar_min">100</integer>
