@@ -7,14 +7,17 @@
     android:layout_height="wrap_content"
     android:layout_marginVertical="@dimen/_3sdp"
     android:background="@drawable/background_card"
-    android:minHeight="@dimen/_64sdp"
+    android:minHeight="@dimen/_72sdp"
     android:padding="@dimen/_10sdp">
 
     <ImageView
         android:id="@+id/local_content_icon"
-        android:layout_width="@dimen/_34sdp"
-        android:layout_height="@dimen/_34sdp"
+        android:layout_width="@dimen/_46sdp"
+        android:layout_height="@dimen/_46sdp"
+        android:background="@drawable/background_card"
         android:contentDescription="@null"
+        android:padding="@dimen/_2sdp"
+        android:scaleType="centerCrop"
         android:src="@drawable/ic_px_image"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
