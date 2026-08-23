@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="active_packs_menu">Aktif Packler</string>
+    <string name="active_mods_menu">Aktif Modlar</string>
+    <string name="active_packs_title">Pack Yönetimi</string>
+    <string name="active_mods_title">Mod Yönetimi</string>
+    <string name="active_packs_subtitle">%1$s • Minecraft %2$s</string>
+    <string name="active_mods_subtitle">%1$s • %2$s • %3$s</string>
+    <string name="local_content_loading">İçerikler yükleniyor…</string>
+    <string name="local_content_no_packs">Bu profilde yüklü texture pack yok.</string>
+    <string name="local_content_no_mods">Bu profilde yüklü mod yok.</string>
+    <string name="local_content_enabled">Açık</string>
+    <string name="local_content_disabled">Kapalı</string>
+    <string name="local_content_toggle_failed">Durum değiştirilemedi.</string>
+    <string name="local_pack_enabled">Pack açıldı. Bir sonraki oyun açılışında uygulanacak.</string>
+    <string name="local_pack_disabled">Pack kapatıldı.</string>
+    <string name="local_mod_enabled">Mod açıldı.</string>
+    <string name="local_mod_disabled">Mod kapatıldı. Dosya silinmedi.</string>
+    <string name="local_content_profile_unknown">Seçili profil bilgisi okunamadı.</string>
+</resources>
