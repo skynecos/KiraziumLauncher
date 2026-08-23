@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -53,3 +53,16 @@ jobs:
           name: KiraziumLauncher-APK
           path: out/KiraziumLauncher.apk
           if-no-files-found: error
+
+      - name: Publish automatic update release
+        if: github.ref == 'refs/heads/v3_openjdk'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v1.0.${GITHUB_RUN_NUMBER}"
+          TITLE="Kirazium Launcher 1.0.${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" out/KiraziumLauncher.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "$TITLE" \
+            --notes "Otomatik Kirazium Launcher güncellemesi. Build #${GITHUB_RUN_NUMBER}."
