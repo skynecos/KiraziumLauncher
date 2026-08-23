@@ -2,12 +2,14 @@ package net.kdt.pojavlaunch;
 
 import static android.content.Intent.FLAG_ACTIVITY_NEW_TASK;
 
+import android.app.Activity;
 import android.app.Application;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.os.Build;
+import android.os.Bundle;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -18,6 +20,7 @@ import net.kdt.pojavlaunch.prefs.LauncherPreferences;
 import net.kdt.pojavlaunch.tasks.AsyncAssetManager;
 import net.kdt.pojavlaunch.tasks.MoJsonDownloader;
 import net.kdt.pojavlaunch.utils.FileUtils;
+import net.kdt.pojavlaunch.utils.KiraziumUpdater;
 import net.kdt.pojavlaunch.utils.LocaleUtils;
 
 import java.io.File;
@@ -44,7 +47,6 @@ public class PojavApplication extends Application {
 					ActivityCompat.checkSelfPermission(PojavApplication.this, android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) && Tools.checkStorageRoot(PojavApplication.this);
 			File crashFile = new File(storagePermAllowed ? Tools.DIR_GAME_HOME : Tools.DIR_DATA, "latestcrash.txt");
 			try {
-				// Write to file, since some devices may not able to show error
 				FileUtils.ensureParentDirectory(crashFile);
 				PrintStream crashStream = new PrintStream(crashFile);
 				crashStream.append(getString(R.string.app_short_name)).append(" crash report\n");
@@ -67,6 +69,25 @@ public class PojavApplication extends Application {
 		});
 	}
 
+    private void registerKiraziumUpdaterLifecycle() {
+        registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
+            @Override public void onActivityCreated(@NonNull Activity activity, Bundle savedInstanceState) {}
+            @Override public void onActivityStarted(@NonNull Activity activity) {}
+
+            @Override
+            public void onActivityResumed(@NonNull Activity activity) {
+                if (!(activity instanceof LauncherActivity)) return;
+                KiraziumUpdater.resumePendingInstall(activity);
+                KiraziumUpdater.checkForUpdates(activity);
+            }
+
+            @Override public void onActivityPaused(@NonNull Activity activity) {}
+            @Override public void onActivityStopped(@NonNull Activity activity) {}
+            @Override public void onActivitySaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) {}
+            @Override public void onActivityDestroyed(@NonNull Activity activity) {}
+        });
+    }
+
 	@Override
 	public void onCreate() {
 		ContextExecutor.setApplication(this);
@@ -77,13 +98,10 @@ public class PojavApplication extends Application {
 		
 		try {
 			super.onCreate();
+            registerKiraziumUpdaterLifecycle();
 			if(Tools.checkStorageRoot(this)){
-				// Implicitly initializes early constants and storage constants.
-				// Required to run the main activity properly.
 				LauncherPreferences.loadPreferences(this);
 			} else {
-				// In other cases, only initialize enough for the basicmost basics to work
-				// and not explode.
 				Tools.initEarlyConstants(this);
 			}
 			Tools.DEVICE_ARCHITECTURE = Architecture.getDeviceArchitecture();
