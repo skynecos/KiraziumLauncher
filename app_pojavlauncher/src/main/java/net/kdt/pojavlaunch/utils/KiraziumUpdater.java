@@ -21,10 +21,13 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -66,7 +69,7 @@ public final class KiraziumUpdater {
                 int responseCode = connection.getResponseCode();
                 if (responseCode != HttpURLConnection.HTTP_OK) return;
 
-                String json = StreamUtils.readStream(connection.getInputStream());
+                String json = readStream(connection.getInputStream());
                 JSONObject release = new JSONObject(json);
                 if (release.optBoolean("draft", false) || release.optBoolean("prerelease", false)) return;
 
@@ -246,6 +249,15 @@ public final class KiraziumUpdater {
         connection.setRequestProperty("Accept", "application/vnd.github+json");
         connection.setRequestProperty("User-Agent", "KiraziumLauncher-Updater");
         return connection;
+    }
+
+    private static String readStream(InputStream input) throws Exception {
+        try (InputStream stream = input; ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = stream.read(buffer)) != -1) output.write(buffer, 0, read);
+            return new String(output.toByteArray(), StandardCharsets.UTF_8);
+        }
     }
 
     private static String findApkUrl(JSONArray assets) {
