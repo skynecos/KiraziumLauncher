@@ -5,7 +5,6 @@ import android.app.ProgressDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
-import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -31,13 +30,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/**
- * Lightweight self-updater for Kirazium Launcher.
- *
- * The launcher checks the latest public GitHub Release, downloads the APK into the
- * app-specific external files directory and hands it to Android's package installer.
- * Android still owns the final install confirmation screen.
- */
+/** Automatic GitHub Releases updater for Kirazium Launcher. */
 public final class KiraziumUpdater {
     private static final String RELEASE_API =
             "https://api.github.com/repos/skynecos/KiraziumLauncher/releases/latest";
@@ -58,29 +51,28 @@ public final class KiraziumUpdater {
         if (pending != null && new File(pending).isFile()) return;
 
         long now = System.currentTimeMillis();
-        long lastCheck = prefs.getLong(KEY_LAST_CHECK, 0L);
-        if (now - lastCheck < CHECK_INTERVAL_MS) return;
+        if (now - prefs.getLong(KEY_LAST_CHECK, 0L) < CHECK_INTERVAL_MS) return;
         if (!CHECK_RUNNING.compareAndSet(false, true)) return;
 
         PojavApplication.sExecutorService.submit(() -> {
             HttpURLConnection connection = null;
             try {
                 connection = openConnection(RELEASE_API);
-                int responseCode = connection.getResponseCode();
-                if (responseCode != HttpURLConnection.HTTP_OK) return;
+                if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) return;
 
-                String json = readStream(connection.getInputStream());
-                JSONObject release = new JSONObject(json);
+                JSONObject release = new JSONObject(readStream(connection.getInputStream()));
                 if (release.optBoolean("draft", false) || release.optBoolean("prerelease", false)) return;
 
                 String remoteVersion = normalizeVersion(release.optString("tag_name", ""));
-                String currentVersion = normalizeVersion(getCurrentVersionName(activity));
+                long remoteBuild = extractBuildNumber(remoteVersion);
+                long currentBuild = getCurrentVersionCode(activity);
                 String apkUrl = findApkUrl(release.optJSONArray("assets"));
-                if (remoteVersion.isEmpty() || apkUrl == null || !isNewer(remoteVersion, currentVersion)) return;
+                if (remoteBuild < 0 || apkUrl == null || remoteBuild <= currentBuild) return;
 
-                activity.runOnUiThread(() -> showUpdateDialog(activity, remoteVersion, currentVersion, apkUrl));
+                activity.runOnUiThread(() -> showUpdateDialog(
+                        activity, remoteVersion, currentBuild, apkUrl));
             } catch (Exception ignored) {
-                // Update checks must never prevent the launcher from starting.
+                // Update checks must never block or crash the launcher.
             } finally {
                 prefs.edit().putLong(KEY_LAST_CHECK, System.currentTimeMillis()).apply();
                 if (connection != null) connection.disconnect();
@@ -89,7 +81,7 @@ public final class KiraziumUpdater {
         });
     }
 
-    /** Continue an APK install after the user grants "install unknown apps" permission. */
+    /** Continue installing after Android grants the per-app unknown-source permission. */
     public static void resumePendingInstall(Activity activity) {
         if (activity == null || activity.isFinishing()) return;
         String pendingPath = prefs(activity).getString(KEY_PENDING_APK, null);
@@ -100,22 +92,18 @@ public final class KiraziumUpdater {
             prefs(activity).edit().remove(KEY_PENDING_APK).apply();
             return;
         }
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                !activity.getPackageManager().canRequestPackageInstalls()) {
-            return;
-        }
+                !activity.getPackageManager().canRequestPackageInstalls()) return;
+
         launchPackageInstaller(activity, apk);
     }
 
     private static void showUpdateDialog(Activity activity, String remoteVersion,
-                                         String currentVersion, String apkUrl) {
+                                         long currentBuild, String apkUrl) {
         if (activity.isFinishing() || (Build.VERSION.SDK_INT >= 17 && activity.isDestroyed())) return;
-
-        String shownCurrent = currentVersion.isEmpty() ? getCurrentVersionName(activity) : currentVersion;
         new AlertDialog.Builder(activity)
                 .setTitle("Kirazium güncellemesi hazır")
-                .setMessage("Yeni sürüm: " + remoteVersion + "\nMevcut sürüm: " + shownCurrent +
+                .setMessage("Yeni sürüm: " + remoteVersion + "\nMevcut build: " + currentBuild +
                         "\n\nAPK otomatik indirilecek. Son adımda Android'in Güncelle/Yükle onayına dokunman yeterli.")
                 .setPositiveButton("İndir ve Güncelle", (dialog, which) ->
                         downloadUpdate(activity, remoteVersion, apkUrl))
@@ -149,9 +137,8 @@ public final class KiraziumUpdater {
 
                 output = new File(downloadDir, "KiraziumLauncher-" + version + ".apk");
                 connection = openConnection(apkUrl);
-                int responseCode = connection.getResponseCode();
-                if (responseCode != HttpURLConnection.HTTP_OK) {
-                    throw new IllegalStateException("HTTP " + responseCode);
+                if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
+                    throw new IllegalStateException("HTTP " + connection.getResponseCode());
                 }
 
                 long total = connection.getContentLengthLong();
@@ -199,7 +186,7 @@ public final class KiraziumUpdater {
         });
     }
 
-    private static void verifyPackageName(Activity activity, File apk) throws Exception {
+    private static void verifyPackageName(Activity activity, File apk) {
         PackageInfo archive = activity.getPackageManager().getPackageArchiveInfo(apk.getAbsolutePath(), 0);
         if (archive == null || archive.packageName == null ||
                 !activity.getPackageName().equals(archive.packageName)) {
@@ -215,12 +202,10 @@ public final class KiraziumUpdater {
                     "Kirazium Launcher için 'Bu kaynaktan uygulama yükle' iznini aç.",
                     Toast.LENGTH_LONG).show();
             try {
-                Intent settingsIntent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                        Uri.parse("package:" + activity.getPackageName()));
-                activity.startActivity(settingsIntent);
+                activity.startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + activity.getPackageName())));
             } catch (Exception error) {
-                Intent settingsIntent = new Intent(Settings.ACTION_SECURITY_SETTINGS);
-                activity.startActivity(settingsIntent);
+                activity.startActivity(new Intent(Settings.ACTION_SECURITY_SETTINGS));
             }
             return;
         }
@@ -275,12 +260,24 @@ public final class KiraziumUpdater {
         return fallback;
     }
 
-    private static String getCurrentVersionName(Activity activity) {
+    private static long extractBuildNumber(String version) {
+        if (version == null || !version.matches("\\d+\\.\\d+\\.\\d+")) return -1L;
+        try {
+            String[] pieces = version.split("\\.");
+            return Long.parseLong(pieces[2]);
+        } catch (Exception ignored) {
+            return -1L;
+        }
+    }
+
+    private static long getCurrentVersionCode(Activity activity) {
         try {
             PackageInfo info = activity.getPackageManager().getPackageInfo(activity.getPackageName(), 0);
-            return info.versionName == null ? "" : info.versionName;
-        } catch (PackageManager.NameNotFoundException ignored) {
-            return "";
+            return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    ? info.getLongVersionCode()
+                    : info.versionCode;
+        } catch (Exception ignored) {
+            return -1L;
         }
     }
 
@@ -291,34 +288,6 @@ public final class KiraziumUpdater {
             normalized = normalized.substring(1);
         }
         return normalized;
-    }
-
-    private static boolean isNewer(String remote, String current) {
-        int[] remoteParts = numericVersion(remote);
-        int[] currentParts = numericVersion(current);
-        if (remoteParts == null) return false;
-        if (currentParts == null) return true;
-
-        int max = Math.max(remoteParts.length, currentParts.length);
-        for (int i = 0; i < max; i++) {
-            int remotePart = i < remoteParts.length ? remoteParts[i] : 0;
-            int currentPart = i < currentParts.length ? currentParts[i] : 0;
-            if (remotePart > currentPart) return true;
-            if (remotePart < currentPart) return false;
-        }
-        return false;
-    }
-
-    private static int[] numericVersion(String version) {
-        if (version == null || !version.matches("\\d+(\\.\\d+){0,3}")) return null;
-        String[] pieces = version.split("\\.");
-        int[] result = new int[pieces.length];
-        try {
-            for (int i = 0; i < pieces.length; i++) result[i] = Integer.parseInt(pieces[i]);
-            return result;
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
     }
 
     private static SharedPreferences prefs(Activity activity) {
