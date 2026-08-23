@@ -141,7 +141,7 @@ public final class KiraziumUpdater {
                     throw new IllegalStateException("HTTP " + connection.getResponseCode());
                 }
 
-                long total = connection.getContentLengthLong();
+                long total = connection.getContentLength();
                 if (total > 0) activity.runOnUiThread(() -> progress.setIndeterminate(false));
 
                 try (BufferedInputStream input = new BufferedInputStream(connection.getInputStream());
