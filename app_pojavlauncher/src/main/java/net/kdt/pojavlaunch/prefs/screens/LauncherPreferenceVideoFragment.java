@@ -29,9 +29,12 @@ public class LauncherPreferenceVideoFragment extends LauncherPreferenceFragment 
                 CustomSeekBarPreference.class);
         resolutionSeekbar.setSuffix(" %");
 
-        // Kirazium allows the renderer scale to go as low as 5%.
-        // Do not restore values below the old Mojo 25% limit back to 100%.
-        resolutionSeekbar.setValue(Math.max(5, Math.min(100, resolution)));
+        // Keep the old invalid-scale guard, but Kirazium intentionally supports 5% and above.
+        if (resolution < 5) {
+            resolutionSeekbar.setValue(100);
+        } else {
+            resolutionSeekbar.setValue(resolution);
+        }
 
         // Sustained performance is only available since Nougat
         SwitchPreference sustainedPerfSwitch = requirePreference("sustainedPerformance",
@@ -63,7 +66,7 @@ public class LauncherPreferenceVideoFragment extends LauncherPreferenceFragment 
                 ListPreference.class);
         RendererCompatUtil.RenderersList renderersList = RendererCompatUtil.getCompatibleRenderers(getContext());
         rendererListPreference.setEntries(renderersList.rendererDisplayNames);
-        rendererListPreference.setEntryValues(rendererList.rendererIds.toArray(new String[0]));
+        rendererListPreference.setEntryValues(renderersList.rendererIds.toArray(new String[0]));
 
         computeVisibility();
     }
