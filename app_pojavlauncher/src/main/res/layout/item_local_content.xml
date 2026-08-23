@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginVertical="@dimen/_3sdp"
+    android:background="@drawable/background_card"
+    android:minHeight="@dimen/_64sdp"
+    android:padding="@dimen/_10sdp">
+
+    <ImageView
+        android:id="@+id/local_content_icon"
+        android:layout_width="@dimen/_34sdp"
+        android:layout_height="@dimen/_34sdp"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_px_image"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <TextView
+        android:id="@+id/local_content_item_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/_10sdp"
+        android:ellipsize="end"
+        android:fontFamily="@font/noto_sans_bold"
+        android:maxLines="1"
+        android:textColor="@color/primary_text"
+        android:textSize="@dimen/_12ssp"
+        app:layout_constraintEnd_toStartOf="@id/local_content_switch"
+        app:layout_constraintStart_toEndOf="@id/local_content_icon"
+        app:layout_constraintTop_toTopOf="parent"
+        tools:text="Fresh Animations" />
+
+    <TextView
+        android:id="@+id/local_content_item_file"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/_10sdp"
+        android:layout_marginTop="@dimen/_1sdp"
+        android:ellipsize="middle"
+        android:maxLines="1"
+        android:textColor="@color/secondary_text"
+        android:textSize="@dimen/_8ssp"
+        app:layout_constraintEnd_toStartOf="@id/local_content_switch"
+        app:layout_constraintStart_toEndOf="@id/local_content_icon"
+        app:layout_constraintTop_toBottomOf="@id/local_content_item_title"
+        tools:text="fresh-animations-v1.9.zip" />
+
+    <TextView
+        android:id="@+id/local_content_item_status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/_10sdp"
+        android:layout_marginTop="@dimen/_2sdp"
+        android:fontFamily="@font/noto_sans_bold"
+        android:text="@string/local_content_enabled"
+        android:textColor="@color/minebutton_color"
+        android:textSize="@dimen/_9ssp"
+        app:layout_constraintStart_toEndOf="@id/local_content_icon"
+        app:layout_constraintTop_toBottomOf="@id/local_content_item_file" />
+
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/local_content_switch"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:contentDescription="@string/local_content_enabled"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
