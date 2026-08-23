@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.util.Log;
 import android.util.LruCache;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -50,6 +51,7 @@ import java.util.Set;
 public class ModStoreFragment extends Fragment {
     public static final String TAG = "ModStoreFragment";
 
+    private static final String LOG_TAG = "KiraziumModStore";
     private static final String MODRINTH_API = "https://api.modrinth.com/v2";
     private static final int RESULT_LIMIT = 30;
 
@@ -172,6 +174,7 @@ public class ModStoreFragment extends Fragment {
                     }
                 });
             } catch (Exception exception) {
+                Log.e(LOG_TAG, "Failed to load Modrinth mod list", exception);
                 Tools.runOnUiThread(() -> {
                     if (!isAdded() || generation != mSearchGeneration) return;
                     mProgress.setVisibility(View.GONE);
@@ -212,12 +215,14 @@ public class ModStoreFragment extends Fragment {
                             Toast.LENGTH_SHORT).show();
                 });
             } catch (Exception exception) {
+                Log.e(LOG_TAG, "Failed to install Modrinth project " + mod.projectId, exception);
+                final String reason = buildInstallFailureReason(exception);
                 Tools.runOnUiThread(() -> {
                     if (!isAdded()) return;
                     button.setEnabled(true);
                     button.setText(R.string.mod_download);
                     Toast.makeText(requireContext(),
-                            R.string.mod_download_failed,
+                            getString(R.string.mod_download_failed) + "\n" + reason,
                             Toast.LENGTH_LONG).show();
                 });
             }
@@ -237,7 +242,7 @@ public class ModStoreFragment extends Fragment {
         JSONObject fallback = null;
         for (int i = 0; i < versionList.length(); i++) {
             JSONObject candidate = versionList.optJSONObject(i);
-            if (candidate == null) continue;
+            if (candidate == null || pickJar(candidate) == null) continue;
             if (fallback == null) fallback = candidate;
             if ("release".equals(candidate.optString("version_type"))) return candidate;
         }
@@ -247,6 +252,65 @@ public class ModStoreFragment extends Fragment {
     private JSONObject fetchVersion(String versionId) throws Exception {
         return new JSONObject(DownloadUtils.downloadString(
                 MODRINTH_API + "/version/" + Uri.encode(versionId)));
+    }
+
+    private boolean jsonArrayContains(JSONArray array, String expected) {
+        if (array == null || TextUtils.isEmpty(expected)) return true;
+        for (int i = 0; i < array.length(); i++) {
+            if (expected.equalsIgnoreCase(array.optString(i, ""))) return true;
+        }
+        return false;
+    }
+
+    private boolean versionSupportsProfile(JSONObject version, SelectedProfileInfo profile) {
+        JSONArray gameVersions = version.optJSONArray("game_versions");
+        JSONArray loaders = version.optJSONArray("loaders");
+        return jsonArrayContains(gameVersions, profile.gameVersion)
+                && jsonArrayContains(loaders, profile.loader.modrinthId);
+    }
+
+    /**
+     * Modrinth can pin a dependency to an exact version. Some projects later replace that exact
+     * dependency build, or the pinned build may not match the currently selected loader/game
+     * version. Prefer it when it is valid, then safely fall back to the dependency project's
+     * compatible version instead of aborting the whole installation immediately.
+     */
+    private JSONObject resolveRequiredDependency(JSONObject dependency,
+                                                 SelectedProfileInfo profile) throws Exception {
+        String dependencyVersionId = dependency.optString("version_id", "");
+        String dependencyProjectId = dependency.optString("project_id", "");
+        String dependencyFileName = dependency.optString("file_name", "");
+        Exception exactVersionError = null;
+
+        if (!TextUtils.isEmpty(dependencyVersionId)) {
+            try {
+                JSONObject exactVersion = fetchVersion(dependencyVersionId);
+                if (versionSupportsProfile(exactVersion, profile) && pickJar(exactVersion) != null) {
+                    return exactVersion;
+                }
+                Log.w(LOG_TAG, "Pinned dependency " + dependencyVersionId
+                        + " is not compatible with " + profile.gameVersion + "/"
+                        + profile.loader.modrinthId + "; trying project fallback");
+            } catch (Exception exception) {
+                exactVersionError = exception;
+                Log.w(LOG_TAG, "Pinned dependency could not be loaded: "
+                        + dependencyVersionId, exception);
+            }
+        }
+
+        if (!TextUtils.isEmpty(dependencyProjectId)) {
+            JSONObject compatibleVersion = findCompatibleVersion(dependencyProjectId, profile);
+            if (compatibleVersion != null) return compatibleVersion;
+        }
+
+        String dependencyLabel = !TextUtils.isEmpty(dependencyFileName)
+                ? dependencyFileName
+                : (!TextUtils.isEmpty(dependencyProjectId)
+                ? dependencyProjectId : dependencyVersionId);
+        IOException unavailable = new IOException("Required dependency unavailable: "
+                + (TextUtils.isEmpty(dependencyLabel) ? "unknown" : dependencyLabel));
+        if (exactVersionError != null) unavailable.initCause(exactVersionError);
+        throw unavailable;
     }
 
     private void installVersionWithDependencies(JSONObject version, File modsDir,
@@ -262,19 +326,7 @@ public class ModStoreFragment extends Fragment {
                 if (dependency == null ||
                         !"required".equals(dependency.optString("dependency_type"))) continue;
 
-                String dependencyVersionId = dependency.optString("version_id", "");
-                String dependencyProjectId = dependency.optString("project_id", "");
-                JSONObject dependencyVersion = null;
-
-                if (!TextUtils.isEmpty(dependencyVersionId)) {
-                    dependencyVersion = fetchVersion(dependencyVersionId);
-                } else if (!TextUtils.isEmpty(dependencyProjectId)) {
-                    dependencyVersion = findCompatibleVersion(dependencyProjectId, profile);
-                }
-
-                if (dependencyVersion == null) {
-                    throw new IOException("Required dependency is unavailable");
-                }
+                JSONObject dependencyVersion = resolveRequiredDependency(dependency, profile);
                 installVersionWithDependencies(dependencyVersion, modsDir, profile, visited);
             }
         }
@@ -282,16 +334,38 @@ public class ModStoreFragment extends Fragment {
         JSONObject file = pickJar(version);
         if (file == null) throw new IOException("No installable JAR in version");
 
-        String filename = new File(file.getString("filename")).getName();
+        String filename = new File(file.optString("filename", "")).getName();
+        if (TextUtils.isEmpty(filename) || !filename.toLowerCase(Locale.ROOT).endsWith(".jar")) {
+            throw new IOException("Invalid mod JAR filename");
+        }
+
         File destination = new File(modsDir, filename);
-        String downloadUrl = file.getString("url");
+        String downloadUrl = file.optString("url", "");
+        if (TextUtils.isEmpty(downloadUrl)) throw new IOException("Mod download URL is missing");
+
         JSONObject hashes = file.optJSONObject("hashes");
         String sha1 = hashes == null ? null : hashes.optString("sha1", null);
 
-        DownloadUtils.ensureSha1(destination, sha1, () -> {
-            DownloadUtils.downloadFile(downloadUrl, destination);
-            return null;
-        });
+        if (destination.isFile() && destination.length() == 0L && !destination.delete()) {
+            throw new IOException("Could not replace an incomplete mod file: " + filename);
+        }
+
+        try {
+            DownloadUtils.ensureSha1(destination, sha1, () -> {
+                DownloadUtils.downloadFile(downloadUrl, destination);
+                return null;
+            });
+        } catch (Exception exception) {
+            if (destination.isFile() && !destination.delete()) {
+                Log.w(LOG_TAG, "Could not delete incomplete JAR " + destination);
+            }
+            throw exception;
+        }
+
+        if (!destination.isFile() || destination.length() <= 0L) {
+            if (destination.isFile()) destination.delete();
+            throw new IOException("Downloaded mod JAR is empty: " + filename);
+        }
     }
 
     private JSONObject pickJar(JSONObject version) {
@@ -309,6 +383,17 @@ public class ModStoreFragment extends Fragment {
             if (file.optBoolean("primary", false)) return file;
         }
         return firstJar;
+    }
+
+    private String buildInstallFailureReason(Exception exception) {
+        Throwable cause = exception;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        String message = cause.getMessage();
+        if (TextUtils.isEmpty(message)) message = exception.getMessage();
+        if (TextUtils.isEmpty(message)) message = cause.getClass().getSimpleName();
+        return message;
     }
 
     private void loadIcon(ModItem mod, ImageView imageView) {
