@@ -87,7 +87,7 @@ public class MainMenuFragment extends Fragment {
                 requireActivity(), TexturePackFragment.class, TexturePackFragment.TAG, null));
         mModsButton.setOnClickListener(v -> Tools.swapFragment(
                 requireActivity(), ModStoreFragment.class, ModStoreFragment.TAG, null));
-        setupContentManagerButtons(mTexturePacksButton, mModsButton, mCustomControlButton);
+        setupActiveModsButton(mModsButton, mCustomControlButton);
         mCustomControlButton.setOnClickListener(v -> startActivity(new Intent(requireContext(), CustomControlsActivity.class)));
         mInstallJarButton.setOnClickListener(v -> runInstallerWithConfirmation());
         mEditProfileButton.setOnClickListener(v -> mVersionSpinner.openProfileEditor(requireActivity()));
@@ -119,38 +119,18 @@ public class MainMenuFragment extends Fragment {
         });
     }
 
-    private void setupContentManagerButtons(Button texturePacksButton,
-                                            Button modsButton,
-                                            Button customControlButton) {
-        if (!(texturePacksButton.getParent() instanceof ConstraintLayout)) return;
-        ConstraintLayout parent = (ConstraintLayout) texturePacksButton.getParent();
+    private void setupActiveModsButton(Button modsButton, Button customControlButton) {
+        if (!(modsButton.getParent() instanceof ConstraintLayout)) return;
+        ConstraintLayout parent = (ConstraintLayout) modsButton.getParent();
 
-        LauncherMenuButton activePacks = createContentMenuButton(
-                parent, R.string.active_packs_menu, R.drawable.ic_px_image);
         LauncherMenuButton activeMods = createContentMenuButton(
                 parent, R.string.active_mods_menu, R.drawable.ic_px_java);
-
-        activePacks.setOnClickListener(v -> Tools.swapFragment(
-                requireActivity(), LocalContentFragment.class, LocalContentFragment.TAG_PACKS,
-                LocalContentFragment.createArgs(LocalContentFragment.MODE_PACKS)));
         activeMods.setOnClickListener(v -> Tools.swapFragment(
                 requireActivity(), LocalContentFragment.class, LocalContentFragment.TAG_MODS,
                 LocalContentFragment.createArgs(LocalContentFragment.MODE_MODS)));
 
         ConstraintSet constraints = new ConstraintSet();
         constraints.clone(parent);
-
-        constraints.connect(activePacks.getId(), ConstraintSet.TOP,
-                texturePacksButton.getId(), ConstraintSet.BOTTOM);
-        constraints.connect(activePacks.getId(), ConstraintSet.START,
-                ConstraintSet.PARENT_ID, ConstraintSet.START);
-        constraints.connect(activePacks.getId(), ConstraintSet.END,
-                ConstraintSet.PARENT_ID, ConstraintSet.END);
-
-        constraints.clear(modsButton.getId(), ConstraintSet.TOP);
-        constraints.connect(modsButton.getId(), ConstraintSet.TOP,
-                activePacks.getId(), ConstraintSet.BOTTOM);
-
         constraints.connect(activeMods.getId(), ConstraintSet.TOP,
                 modsButton.getId(), ConstraintSet.BOTTOM);
         constraints.connect(activeMods.getId(), ConstraintSet.START,
