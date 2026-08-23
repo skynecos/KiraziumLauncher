@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background_app"
+    android:paddingHorizontal="@dimen/_8sdp">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/local_content_header"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/_8sdp"
+        android:background="@drawable/background_overlay"
+        android:padding="@dimen/_10sdp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <ImageButton
+            android:id="@+id/local_content_back"
+            android:layout_width="@dimen/_38sdp"
+            android:layout_height="@dimen/_38sdp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@android:string/cancel"
+            android:padding="@dimen/_9sdp"
+            android:src="@drawable/ic_px_arrow_left"
+            app:layout_constraintBottom_toBottomOf="@id/local_content_title"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="@id/local_content_title" />
+
+        <TextView
+            android:id="@+id/local_content_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/_6sdp"
+            android:fontFamily="@font/noto_sans_bold"
+            android:textColor="@color/primary_text"
+            android:textSize="@dimen/_18ssp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@id/local_content_back"
+            app:layout_constraintTop_toTopOf="parent"
+            tools:text="Pack Yönetimi" />
+
+        <TextView
+            android:id="@+id/local_content_subtitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/_6sdp"
+            android:layout_marginTop="@dimen/_1sdp"
+            android:textColor="@color/secondary_text"
+            android:textSize="@dimen/_9ssp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@id/local_content_back"
+            app:layout_constraintTop_toBottomOf="@id/local_content_title"
+            tools:text="Kirazium • Minecraft 26.1.2" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/local_content_list"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:clipToPadding="false"
+        android:paddingTop="@dimen/_5sdp"
+        android:paddingBottom="@dimen/_10sdp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/local_content_header"
+        tools:listitem="@layout/item_local_content" />
+
+    <TextView
+        android:id="@+id/local_content_status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:maxWidth="@dimen/_260sdp"
+        android:text="@string/local_content_loading"
+        android:textColor="@color/secondary_text"
+        android:textSize="@dimen/_11ssp"
+        app:layout_constraintBottom_toBottomOf="@id/local_content_list"
+        app:layout_constraintEnd_toEndOf="@id/local_content_list"
+        app:layout_constraintStart_toStartOf="@id/local_content_list"
+        app:layout_constraintTop_toTopOf="@id/local_content_list" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
