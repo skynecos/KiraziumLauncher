@@ -4,6 +4,7 @@
     <string name="active_mods_menu">Aktif Modlar</string>
     <string name="active_packs_title">Pack Yönetimi</string>
     <string name="active_mods_title">Mod Yönetimi</string>
+    <string name="active_packs_card_description">Yüklü texture packleri aç veya kapat</string>
     <string name="active_packs_subtitle">%1$s • Minecraft %2$s</string>
     <string name="active_mods_subtitle">%1$s • %2$s • %3$s</string>
     <string name="local_content_loading">İçerikler yükleniyor…</string>
