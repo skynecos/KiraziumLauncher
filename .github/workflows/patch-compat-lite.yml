@@ -1,0 +1,44 @@
+name: Patch lightweight OptiFine compatibility
+
+on:
+  push:
+    branches:
+      - work/compat-lite
+    paths:
+      - '.github/workflows/patch-compat-lite.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: work/compat-lite
+
+      - name: Patch Kirazium compatibility set
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/instances/KiraziumBootstrap.java')
+          s = p.read_text()
+          old = '''    private static final String[] RESOURCE_PACK_COMPAT_MODS = new String[] {\n            "cit-resewn-continuation"\n    };'''
+          new = '''    private static final String[] RESOURCE_PACK_COMPAT_MODS = new String[] {\n            "cit-resewn-continuation",\n            "continuity"\n    };'''
+          if old not in s:
+              raise SystemExit('RESOURCE_PACK_COMPAT_MODS block not found')
+          s = s.replace(old, new, 1)
+          s = s.replace('.kirazium-resource-pack-compat-v2', '.kirazium-resource-pack-compat-v3', 1)
+          p.write_text(s)
+          PY
+
+      - name: Remove temporary workflow and commit patch
+        run: |
+          rm .github/workflows/patch-compat-lite.yml
+          git config user.name "skynecos"
+          git config user.email "skynecos@gmail.com"
+          git add app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/instances/KiraziumBootstrap.java .github/workflows/patch-compat-lite.yml
+          git commit -m "Add lightweight OptiFine resource pack compatibility"
+          git push origin HEAD:work/compat-lite
