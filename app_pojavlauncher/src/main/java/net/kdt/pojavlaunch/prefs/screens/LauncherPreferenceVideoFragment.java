@@ -20,21 +20,21 @@ import net.kdt.pojavlaunch.utils.RendererCompatUtil;
  * Fragment for any settings video related
  */
 public class LauncherPreferenceVideoFragment extends LauncherPreferenceFragment {
+    private static final String RESOLUTION_KEY = "resolutionRatio";
+    private static final String LOW_GRAPHICS_KEY = "kiraziumLowGraphicsMode";
+    private static final String USER_RESOLUTION_KEY = "kiraziumUserResolutionRatio";
+
     @Override
     public void onCreatePreferences(Bundle b, String str) {
         addPreferencesFromResource(R.xml.pref_video);
-        int resolution = (int) (LauncherPreferences.PREF_SCALE_FACTOR * 100);
+        int resolution = Math.max(5, Math.min(100,
+                (int) (LauncherPreferences.PREF_SCALE_FACTOR * 100)));
 
-        CustomSeekBarPreference resolutionSeekbar = requirePreference("resolutionRatio",
+        CustomSeekBarPreference resolutionSeekbar = requirePreference(RESOLUTION_KEY,
                 CustomSeekBarPreference.class);
         resolutionSeekbar.setSuffix(" %");
-
-        // #724 bug fix
-        if (resolution < 25) {
-            resolutionSeekbar.setValue(100);
-        } else {
-            resolutionSeekbar.setValue(resolution);
-        }
+        resolutionSeekbar.setRange(5, 100);
+        resolutionSeekbar.setValue(resolution);
 
         // Sustained performance is only available since Nougat
         SwitchPreference sustainedPerfSwitch = requirePreference("sustainedPerformance",
@@ -65,8 +65,8 @@ public class LauncherPreferenceVideoFragment extends LauncherPreferenceFragment 
         ListPreference rendererListPreference = requirePreference("renderer",
                 ListPreference.class);
         RendererCompatUtil.RenderersList renderersList = RendererCompatUtil.getCompatibleRenderers(getContext());
-        rendererListPreference.setEntries(renderersList.rendererDisplayNames);
-        rendererListPreference.setEntryValues(renderersList.rendererIds.toArray(new String[0]));
+        rendererListPreference.setEntries(rendererList.rendererDisplayNames);
+        rendererListPreference.setEntryValues(rendererList.rendererIds.toArray(new String[0]));
 
         computeVisibility();
     }
@@ -83,6 +83,15 @@ public class LauncherPreferenceVideoFragment extends LauncherPreferenceFragment 
     @Override
     public void onSharedPreferenceChanged(SharedPreferences p, String s) {
         super.onSharedPreferenceChanged(p, s);
+
+        if (RESOLUTION_KEY.equals(s)) {
+            int ratio = Math.max(5, Math.min(100, p.getInt(RESOLUTION_KEY, 100)));
+            LauncherPreferences.PREF_SCALE_FACTOR = ratio / 100f;
+            if (p.getBoolean(LOW_GRAPHICS_KEY, false)) {
+                p.edit().putInt(USER_RESOLUTION_KEY, ratio).apply();
+            }
+        }
+
         computeVisibility();
     }
 
