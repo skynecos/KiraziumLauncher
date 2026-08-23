@@ -73,6 +73,7 @@ public class TexturePackFragment extends Fragment {
 
         ImageButton backButton = view.findViewById(R.id.texture_pack_back);
         ImageButton searchButton = view.findViewById(R.id.texture_pack_search_button);
+        View activePacksCard = view.findViewById(R.id.active_packs_card);
         RecyclerView list = view.findViewById(R.id.texture_pack_list);
         mSearchInput = view.findViewById(R.id.texture_pack_search);
         mProgress = view.findViewById(R.id.texture_pack_progress);
@@ -84,6 +85,9 @@ public class TexturePackFragment extends Fragment {
         list.setAdapter(mAdapter);
 
         backButton.setOnClickListener(v -> Tools.removeCurrentFragment(requireActivity()));
+        activePacksCard.setOnClickListener(v -> Tools.swapFragment(
+                requireActivity(), LocalContentFragment.class, LocalContentFragment.TAG_PACKS,
+                LocalContentFragment.createArgs(LocalContentFragment.MODE_PACKS)));
         searchButton.setOnClickListener(v -> searchPacks(mSearchInput.getText().toString()));
         mSearchInput.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
