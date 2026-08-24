@@ -13,14 +13,14 @@ public enum AuthType {
             MicrosoftBackgroundLogin.CREATOR,
             R.drawable.ic_auth_ms,
             null,
-            "https://mineskin.eu/skin/%s" // Switched from mc-heads.net cause blocked in Russia
+            "https://mineskin.eu/skin/%s"
     ),
     @SerializedName("elyby")
     ELY_BY(
             ElyByBackgroundLogin.CREATOR,
             R.drawable.ic_auth_elyby,
             "ely.by",
-            "http://skinsystem.ely.by/skins/%s.png"
+            null // Do not fetch launcher avatars over the legacy cleartext skin endpoint.
     ),
     @SerializedName("local")
     LOCAL(null, 0, null, null);
