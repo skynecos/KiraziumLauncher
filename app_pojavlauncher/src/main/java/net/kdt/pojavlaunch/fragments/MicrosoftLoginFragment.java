@@ -11,6 +11,7 @@ public class MicrosoftLoginFragment extends OAuthFragment {
                         "&response_type=code" +
                         "&scope=service%3A%3Auser.auth.xboxlive.com%3A%3AMBI_SSL" +
                         "&redirect_url=https%3A%2F%2Flogin.live.com%2Foauth20_desktop.srf",
-                ExtraConstants.MICROSOFT_LOGIN_TODO);
+                ExtraConstants.MICROSOFT_LOGIN_TODO,
+                true);
     }
 }
