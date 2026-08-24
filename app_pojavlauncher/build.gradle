@@ -18,19 +18,6 @@ static def getDateSeconds() {
     }
 }
 
-def getVersionName = {
-    def currentBranch = grgit.branch.current()
-    def latestCommit = grgit.log(maxCommits: 1)
-    def dateToday = getDate()
-    if(currentBranch == null || latestCommit == null) {
-        return "LOCAL-${dateToday}"
-    }else {
-        def branchName = currentBranch.getName()
-        def commitAbbreviation = latestCommit.abbreviatedId
-        return "kirazium-${dateToday}-${commitAbbreviation}-${branchName}"
-    }
-}
-
 def getCFApiKey = {
     String key = System.getenv("CURSEFORGE_API_KEY")
     if(key != null) return key
@@ -72,7 +59,7 @@ android {
         minSdkVersion 21
         targetSdkVersion 36
         versionCode getDateSeconds()
-        versionName getVersionName()
+        versionName "2.0"
         multiDexEnabled false //important
         resValue 'string', 'curseforge_api_key', getCFApiKey()
         resValue 'string', 'group_id', 'git.artdeell'

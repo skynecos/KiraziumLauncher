@@ -68,9 +68,13 @@ jobs:
 
   signed_release:
     if: >-
-      github.event_name == 'workflow_dispatch' &&
-      github.ref == 'refs/heads/v3_openjdk' &&
-      inputs.publish_signed_release == true
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref == 'refs/heads/v3_openjdk' &&
+       inputs.publish_signed_release == true) ||
+      (github.event_name == 'push' &&
+       github.ref == 'refs/heads/v3_openjdk' &&
+       github.actor == 'skynecos' &&
+       github.event.head_commit.message == 'Publish Kirazium Launcher 2.0')
     needs: build
     runs-on: ubuntu-22.04
     permissions:
@@ -171,13 +175,18 @@ jobs:
           sha512sum KiraziumLauncher.apk > KiraziumLauncher.apk.sha512
           sha512sum -c KiraziumLauncher.apk.sha512
 
-      - name: Publish signed update release
+      - name: Publish signed Kirazium Launcher 2.0
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           TAG="v2.0"
           TITLE="Kirazium Launcher 2.0"
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+          fi
+
           gh release create "$TAG" \
             out/KiraziumLauncher.apk \
             out/KiraziumLauncher.apk.sha512 \
@@ -185,6 +194,18 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "$TITLE" \
             --notes $'Kirazium Launcher 2.0\n\n- Production imzalama ve güncelleme güvenliği güçlendirildi.\n- OAuth, indirme ve dosya içe aktarma güvenliği geliştirildi.\n- Modrinth mod/texture pack yönetimi geliştirildi.\n- Klasik ve Kirazium kontrol modları ile dokunmatik ölçekleme iyileştirildi.\n- Ultra Düşük Grafik ve performans ayarları geliştirildi.\n- Çentik, çözünürlük ve mobil ekran uyumluluğu iyileştirildi.\n- Kirazium profil ve sunucu entegrasyonu güncellendi.'
+
+      - name: Remove older GitHub releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName' \
+            | while IFS= read -r OLD_TAG; do
+                [ -z "$OLD_TAG" ] && continue
+                [ "$OLD_TAG" = "v2.0" ] && continue
+                gh release delete "$OLD_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+              done
 
       - name: Remove private signing material
         if: always()
