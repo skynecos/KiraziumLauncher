@@ -6,8 +6,14 @@ on:
       - v3_openjdk
       - "codex/**"
   workflow_dispatch:
+    inputs:
+      publish_signed_release:
+        description: "Private Kirazium anahtarıyla imzala ve GitHub Release yayınla"
+        required: true
+        default: false
+        type: boolean
 
-# Default to read-only. The release job gets write access explicitly.
+# Push CI is read-only. Only the explicitly requested signed-release job gets write access.
 permissions:
   contents: read
 
@@ -52,6 +58,32 @@ jobs:
           chmod +x gradlew
           ./gradlew :app_pojavlauncher:assembleFullRelease --stacktrace
 
+      - name: Upload unsigned CI APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: KiraziumLauncher-Unsigned-CI
+          path: app_pojavlauncher/build/outputs/apk/full/release/*.apk
+          if-no-files-found: error
+          retention-days: 3
+
+  signed_release:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/v3_openjdk' &&
+      inputs.publish_signed_release == true
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Download unsigned APK from verified build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: KiraziumLauncher-Unsigned-CI
+          path: unsigned
+
       - name: Prepare private Kirazium signing key
         env:
           KIRAZIUM_KEYSTORE_B64: ${{ secrets.KIRAZIUM_KEYSTORE_B64 }}
@@ -79,6 +111,12 @@ jobs:
             -storepass "$KIRAZIUM_KEYSTORE_PASSWORD" \
             -alias kirazium >/dev/null
 
+      - name: Set up JDK 17 for apksigner tooling
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
       - name: Sign and verify production APK
         env:
           KIRAZIUM_KEYSTORE_PASSWORD: ${{ secrets.KIRAZIUM_KEYSTORE_PASSWORD }}
@@ -96,9 +134,9 @@ jobs:
             exit 1
           fi
 
-          UNSIGNED_APK="$(find app_pojavlauncher/build/outputs/apk/full/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          UNSIGNED_APK="$(find unsigned -maxdepth 1 -type f -name '*.apk' | head -n 1)"
           if [ -z "$UNSIGNED_APK" ] || [ ! -f "$UNSIGNED_APK" ]; then
-            echo "::error::Unsigned fullRelease APK was not produced."
+            echo "::error::Unsigned fullRelease APK was not downloaded."
             exit 1
           fi
 
@@ -116,43 +154,7 @@ jobs:
           sha512sum KiraziumLauncher.apk > KiraziumLauncher.apk.sha512
           sha512sum -c KiraziumLauncher.apk.sha512
 
-      - name: Upload signed Kirazium artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: KiraziumLauncher-Release
-          path: |
-            out/KiraziumLauncher.apk
-            out/KiraziumLauncher.apk.sha512
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Remove private signing material
-        if: always()
-        run: |
-          rm -rf "$RUNNER_TEMP/kirazium-signing"
-
-  publish:
-    if: github.ref == 'refs/heads/v3_openjdk'
-    needs: build
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-      actions: read
-
-    steps:
-      - name: Download verified release artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: KiraziumLauncher-Release
-          path: out
-
-      - name: Verify checksum before publishing
-        run: |
-          set -euo pipefail
-          cd out
-          sha512sum -c KiraziumLauncher.apk.sha512
-
-      - name: Publish automatic signed update release
+      - name: Publish signed update release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -166,3 +168,8 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "$TITLE" \
             --notes "İmzalı Kirazium Launcher güncellemesi. Build #${GITHUB_RUN_NUMBER}. APK SHA-512 dosyası release ile birlikte doğrulanabilir."
+
+      - name: Remove private signing material
+        if: always()
+        run: |
+          rm -rf "$RUNNER_TEMP/kirazium-signing"
