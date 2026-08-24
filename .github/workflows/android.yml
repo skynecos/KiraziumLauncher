@@ -76,6 +76,8 @@ jobs:
     permissions:
       contents: write
       actions: read
+    env:
+      EXPECTED_KIRAZIUM_CERT_SHA256: "206d0a623973d12b6f50f147d6e9417c164f3b66a30ce1f418c34940e94bb755"
 
     steps:
       - name: Download unsigned APK from verified build
@@ -84,7 +86,7 @@ jobs:
           name: KiraziumLauncher-Unsigned-CI
           path: unsigned
 
-      - name: Prepare private Kirazium signing key
+      - name: Prepare and pin private Kirazium signing key
         env:
           KIRAZIUM_KEYSTORE_B64: ${{ secrets.KIRAZIUM_KEYSTORE_B64 }}
           KIRAZIUM_KEYSTORE_PASSWORD: ${{ secrets.KIRAZIUM_KEYSTORE_PASSWORD }}
@@ -106,10 +108,16 @@ jobs:
             exit 1
           fi
 
-          keytool -list \
+          ACTUAL_CERT_SHA256="$(keytool -list -v \
             -keystore "$SIGNING_DIR/kirazium-release.jks" \
             -storepass "$KIRAZIUM_KEYSTORE_PASSWORD" \
-            -alias kirazium >/dev/null
+            -alias kirazium \
+            | awk -F': ' '/SHA256:/{gsub(":", "", $2); print tolower($2); exit}')"
+
+          if [ -z "$ACTUAL_CERT_SHA256" ] || [ "$ACTUAL_CERT_SHA256" != "$EXPECTED_KIRAZIUM_CERT_SHA256" ]; then
+            echo "::error::Signing keystore certificate does not match the pinned Kirazium production certificate."
+            exit 1
+          fi
 
       - name: Set up JDK 17 for apksigner tooling
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
@@ -149,7 +157,16 @@ jobs:
             --out out/KiraziumLauncher.apk \
             "$UNSIGNED_APK"
 
-          "$APKSIGNER" verify --verbose --print-certs out/KiraziumLauncher.apk
+          VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs out/KiraziumLauncher.apk)"
+          printf '%s\n' "$VERIFY_OUTPUT"
+          SIGNED_CERT_SHA256="$(printf '%s\n' "$VERIFY_OUTPUT" \
+            | awk -F': ' '/certificate SHA-256 digest/{gsub(":", "", $2); print tolower($2); exit}')"
+
+          if [ -z "$SIGNED_CERT_SHA256" ] || [ "$SIGNED_CERT_SHA256" != "$EXPECTED_KIRAZIUM_CERT_SHA256" ]; then
+            echo "::error::Signed APK certificate does not match the pinned Kirazium production certificate."
+            exit 1
+          fi
+
           cd out
           sha512sum KiraziumLauncher.apk > KiraziumLauncher.apk.sha512
           sha512sum -c KiraziumLauncher.apk.sha512
