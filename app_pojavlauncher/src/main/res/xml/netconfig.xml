@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+
+    <!-- Legacy Ely.by skin compatibility is the only narrow cleartext exception. -->
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">ely.by</domain>
     </domain-config>
