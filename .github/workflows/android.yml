@@ -176,15 +176,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v1.0.${GITHUB_RUN_NUMBER}"
-          TITLE="Kirazium Launcher 1.0.${GITHUB_RUN_NUMBER}"
+          TAG="v2.0"
+          TITLE="Kirazium Launcher 2.0"
           gh release create "$TAG" \
             out/KiraziumLauncher.apk \
             out/KiraziumLauncher.apk.sha512 \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "$TITLE" \
-            --notes "İmzalı Kirazium Launcher güncellemesi. Build #${GITHUB_RUN_NUMBER}. APK SHA-512 dosyası release ile birlikte doğrulanabilir."
+            --notes $'Kirazium Launcher 2.0\n\n- Production imzalama ve güncelleme güvenliği güçlendirildi.\n- OAuth, indirme ve dosya içe aktarma güvenliği geliştirildi.\n- Modrinth mod/texture pack yönetimi geliştirildi.\n- Klasik ve Kirazium kontrol modları ile dokunmatik ölçekleme iyileştirildi.\n- Ultra Düşük Grafik ve performans ayarları geliştirildi.\n- Çentik, çözünürlük ve mobil ekran uyumluluğu iyileştirildi.\n- Kirazium profil ve sunucu entegrasyonu güncellendi.'
 
       - name: Remove private signing material
         if: always()
