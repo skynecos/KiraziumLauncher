@@ -42,6 +42,7 @@ public class MicrosoftBackgroundLogin implements BackgroundLogin{
     private static final String mcLoginUrl = "https://api.minecraftservices.com/authentication/login_with_xbox";
     private static final String mcProfileUrl = "https://api.minecraftservices.com/minecraft/profile";
     private static final String mcStoreUrl = "https://api.minecraftservices.com/entitlements/mcstore";
+    private static final String PKCE_PAYLOAD_PREFIX = "kirazium-pkce:";
 
     private static final Map<Long, Integer> XSTS_ERRORS;
     static {
@@ -125,19 +126,54 @@ public class MicrosoftBackgroundLogin implements BackgroundLogin{
 
     private String acquireAccessToken(boolean isRefresh, String code) throws IOException {
         URL url = new URL(authTokenUrl);
-        Log.i("MicrosoftLogin", isRefresh ? "Refreshing Microsoft session" : "Exchanging Microsoft authorization code");
+        Log.i("MicrosoftLogin", isRefresh ? "Refreshing Microsoft session" : "Exchanging Microsoft authorization code with PKCE");
 
-        String formData = CommonLoginUtils.convertToFormData(
-                "client_id", "00000000402b5328",
-                isRefresh ? "refresh_token" : "code", code,
-                "grant_type", isRefresh ? "refresh_token" : "authorization_code",
-                "redirect_url", "https://login.live.com/oauth20_desktop.srf",
-                "scope", "service::user.auth.xboxlive.com::MBI_SSL"
-        );
+        String formData;
+        if (isRefresh) {
+            formData = CommonLoginUtils.convertToFormData(
+                    "client_id", "00000000402b5328",
+                    "refresh_token", code,
+                    "grant_type", "refresh_token",
+                    "redirect_url", "https://login.live.com/oauth20_desktop.srf",
+                    "scope", "service::user.auth.xboxlive.com::MBI_SSL"
+            );
+        } else {
+            PkceAuthorization authorization = parsePkceAuthorization(code);
+            formData = CommonLoginUtils.convertToFormData(
+                    "client_id", "00000000402b5328",
+                    "code", authorization.code,
+                    "code_verifier", authorization.verifier,
+                    "grant_type", "authorization_code",
+                    "redirect_url", "https://login.live.com/oauth20_desktop.srf",
+                    "scope", "service::user.auth.xboxlive.com::MBI_SSL"
+            );
+        }
 
         OAuthTokenResponse response = CommonLoginUtils.exchangeAuthCode(url, formData);
+        if (response == null || response.accessToken == null || response.accessToken.isEmpty()) {
+            throw new IOException("Microsoft returned no access token");
+        }
         msRefreshToken = response.refreshToken;
         return response.accessToken;
+    }
+
+    private static PkceAuthorization parsePkceAuthorization(String value) throws IOException {
+        if (value == null || !value.startsWith(PKCE_PAYLOAD_PREFIX)) {
+            throw new IOException("Secure Microsoft PKCE session is missing");
+        }
+
+        String payload = value.substring(PKCE_PAYLOAD_PREFIX.length());
+        int separator = payload.indexOf(':');
+        if (separator <= 0 || separator >= payload.length() - 1) {
+            throw new IOException("Secure Microsoft PKCE payload is invalid");
+        }
+
+        String verifier = payload.substring(0, separator);
+        String authorizationCode = payload.substring(separator + 1);
+        if (!verifier.matches("[A-Za-z0-9_-]{43,128}") || authorizationCode.length() > 8192) {
+            throw new IOException("Secure Microsoft PKCE payload failed validation");
+        }
+        return new PkceAuthorization(authorizationCode, verifier);
     }
 
     private String acquireXBLToken(String accessToken) throws IOException, JSONException {
@@ -201,12 +237,17 @@ public class MicrosoftBackgroundLogin implements BackgroundLogin{
             JSONObject jo = new JSONObject(responseContents);
             long xerr = jo.optLong("XErr", -1);
             Integer locale_id = XSTS_ERRORS.get(xerr);
+            conn.disconnect();
             if(locale_id != null) {
                 throw new PresentedException(new RuntimeException("XSTS authentication rejected"), locale_id);
             }
             throw new PresentedException(new RuntimeException("XSTS authentication rejected"), R.string.xerr_unknown, xerr);
         }else{
-            throw CommonLoginUtils.getResponseThrowable(conn);
+            try {
+                throw CommonLoginUtils.getResponseThrowable(conn);
+            } finally {
+                conn.disconnect();
+            }
         }
     }
 
@@ -231,7 +272,11 @@ public class MicrosoftBackgroundLogin implements BackgroundLogin{
             mcToken = jo.getString("access_token");
             return mcToken;
         }else{
-            throw CommonLoginUtils.getResponseThrowable(conn);
+            try {
+                throw CommonLoginUtils.getResponseThrowable(conn);
+            } finally {
+                conn.disconnect();
+            }
         }
     }
 
@@ -240,10 +285,16 @@ public class MicrosoftBackgroundLogin implements BackgroundLogin{
 
         HttpURLConnection conn = (HttpURLConnection)url.openConnection();
         conn.setRequestProperty("Authorization", "Bearer " + mcAccessToken);
+        conn.setConnectTimeout(15000);
+        conn.setReadTimeout(30000);
         conn.setUseCaches(false);
         conn.connect();
         if(conn.getResponseCode() < 200 || conn.getResponseCode() >= 300) {
-            throw CommonLoginUtils.getResponseThrowable(conn);
+            try {
+                throw CommonLoginUtils.getResponseThrowable(conn);
+            } finally {
+                conn.disconnect();
+            }
         }
         conn.disconnect();
     }
@@ -253,6 +304,8 @@ public class MicrosoftBackgroundLogin implements BackgroundLogin{
 
         HttpURLConnection conn = (HttpURLConnection)url.openConnection();
         conn.setRequestProperty("Authorization", "Bearer " + mcAccessToken);
+        conn.setConnectTimeout(15000);
+        conn.setReadTimeout(30000);
         conn.setUseCaches(false);
         conn.connect();
 
@@ -298,5 +351,15 @@ public class MicrosoftBackgroundLogin implements BackgroundLogin{
         conn.setUseCaches(false);
         conn.setDoInput(true);
         conn.setDoOutput(true);
+    }
+
+    private static final class PkceAuthorization {
+        final String code;
+        final String verifier;
+
+        PkceAuthorization(String code, String verifier) {
+            this.code = code;
+            this.verifier = verifier;
+        }
     }
 }
