@@ -18,11 +18,14 @@ import android.webkit.WebViewClient;
 import androidx.annotation.NonNull;
 import androidx.fragment.app.Fragment;
 
+import java.util.Locale;
+
 import git.artdeell.mojo.R;
 
 public abstract class WebViewCompletionFragment extends Fragment {
     private final String mTrackedUrl;
     private final String mAuthUrl;
+    private final String mAuthHost;
     private WebView mWebview;
     private boolean mBlankClient = true;
     private boolean mIsCompleted = false;
@@ -30,6 +33,9 @@ public abstract class WebViewCompletionFragment extends Fragment {
     protected WebViewCompletionFragment(String mTrackedUrl, String mAuthUrl) {
         this.mTrackedUrl = mTrackedUrl;
         this.mAuthUrl = mAuthUrl;
+        Uri authUri = Uri.parse(mAuthUrl);
+        String authHost = authUri.getHost();
+        this.mAuthHost = authHost == null ? null : authHost.toLowerCase(Locale.ROOT);
     }
 
     @Override
@@ -70,7 +76,7 @@ public abstract class WebViewCompletionFragment extends Fragment {
             mWebview.clearCache(true);
             mWebview.clearFormData();
             if (!isAllowedWebUrl(mAuthUrl)) {
-                Log.e("OAuthWebView", "Blocked non-HTTPS OAuth start URL");
+                Log.e("OAuthWebView", "Blocked untrusted OAuth start URL");
                 return;
             }
             mWebview.loadUrl(mAuthUrl);
@@ -81,6 +87,13 @@ public abstract class WebViewCompletionFragment extends Fragment {
         Log.i("MSAuthFragment","Restoring state...");
         if(mWebview.restoreState(savedInstanceState) == null) {
             Log.w("MSAuthFragment", "Failed to restore state, starting afresh");
+            startNewSession();
+            return;
+        }
+
+        String restoredUrl = mWebview.getUrl();
+        if (restoredUrl != null && !isTrackedUrl(restoredUrl) && !isAllowedWebUrl(restoredUrl)) {
+            Log.w("OAuthWebView", "Discarded restored OAuth state on an untrusted host");
             startNewSession();
         }
     }
@@ -123,14 +136,35 @@ public abstract class WebViewCompletionFragment extends Fragment {
         return true;
     }
 
+    private static boolean isSameOrSubdomain(String host, String trustedDomain) {
+        if (host == null || trustedDomain == null || trustedDomain.isEmpty()) return false;
+        return host.equals(trustedDomain) || host.endsWith("." + trustedDomain);
+    }
+
+    private boolean isAllowedIdentityHost(String host) {
+        if (host == null) return false;
+        String normalized = host.toLowerCase(Locale.ROOT);
+
+        // Always trust the provider that initiated this OAuth session (for example account.ely.by).
+        if (isSameOrSubdomain(normalized, mAuthHost)) return true;
+
+        // Microsoft authentication may legitimately move between these Microsoft-controlled domains.
+        return isSameOrSubdomain(normalized, "live.com")
+                || isSameOrSubdomain(normalized, "microsoft.com")
+                || isSameOrSubdomain(normalized, "microsoftonline.com")
+                || isSameOrSubdomain(normalized, "xbox.com")
+                || isSameOrSubdomain(normalized, "xboxlive.com");
+    }
+
     private boolean isAllowedWebUrl(String url) {
         if (url == null) return false;
         if ("about:blank".equalsIgnoreCase(url)) return true;
         Uri uri = Uri.parse(url);
-        return "https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null;
+        return "https".equalsIgnoreCase(uri.getScheme())
+                && isAllowedIdentityHost(uri.getHost());
     }
 
-    /** Client that only permits HTTPS navigation plus the exact OAuth callback scheme. */
+    /** Client that only permits trusted HTTPS identity hosts plus the exact OAuth callback scheme. */
     class WebViewTrackClient extends WebViewClient {
         private boolean handleUrl(String url) {
             if(isTrackedUrl(url)) {
@@ -138,7 +172,7 @@ public abstract class WebViewCompletionFragment extends Fragment {
                 return true;
             }
             if (!isAllowedWebUrl(url)) {
-                Log.w("OAuthWebView", "Blocked non-HTTPS OAuth navigation");
+                Log.w("OAuthWebView", "Blocked untrusted OAuth navigation");
                 return true;
             }
             return false;
