@@ -31,13 +31,12 @@ import net.kdt.pojavlaunch.Tools;
 import net.kdt.pojavlaunch.instances.Instance;
 import net.kdt.pojavlaunch.instances.Instances;
 import net.kdt.pojavlaunch.instances.SelectedProfileInfo;
-import net.kdt.pojavlaunch.utils.DownloadUtils;
 import net.kdt.pojavlaunch.utils.FileUtils;
+import net.kdt.pojavlaunch.utils.KiraziumSecureDownloads;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -52,6 +51,10 @@ public class TexturePackFragment extends Fragment {
 
     private static final String MODRINTH_API = "https://api.modrinth.com/v2";
     private static final int RESULT_LIMIT = 30;
+    private static final int MAX_API_BYTES = 4 * 1024 * 1024;
+    private static final int MAX_ICON_BYTES = 2 * 1024 * 1024;
+    private static final int MAX_ICON_DIMENSION = 1024;
+    private static final long MAX_RESOURCE_PACK_BYTES = 512L * 1024L * 1024L;
 
     private EditText mSearchInput;
     private ProgressBar mProgress;
@@ -120,7 +123,8 @@ public class TexturePackFragment extends Fragment {
                         "&index=downloads&query=" + Uri.encode(cleanQuery) +
                         "&facets=" + Uri.encode(facets);
 
-                JSONObject response = new JSONObject(DownloadUtils.downloadString(url));
+                JSONObject response = new JSONObject(
+                        KiraziumSecureDownloads.downloadModrinthString(url, MAX_API_BYTES));
                 JSONArray hits = response.optJSONArray("hits");
                 List<TexturePack> packs = new ArrayList<>();
                 if (hits != null) {
@@ -199,11 +203,10 @@ public class TexturePackFragment extends Fragment {
 
                 String downloadUrl = file.getString("url");
                 JSONObject hashes = file.optJSONObject("hashes");
-                String sha1 = hashes == null ? null : hashes.optString("sha1", null);
-                DownloadUtils.ensureSha1(destination, sha1, () -> {
-                    DownloadUtils.downloadFile(downloadUrl, destination);
-                    return null;
-                });
+                String sha512 = hashes == null ? null : hashes.optString("sha512", null);
+                long expectedSize = file.optLong("size", -1L);
+                KiraziumSecureDownloads.downloadVerifiedModrinthFile(
+                        downloadUrl, destination, sha512, expectedSize, MAX_RESOURCE_PACK_BYTES);
 
                 mInstalledProjects.add(pack.projectId);
                 Tools.runOnUiThread(() -> {
@@ -236,7 +239,8 @@ public class TexturePackFragment extends Fragment {
                 "&loaders=" + Uri.encode(loaders) +
                 "&include_changelog=false";
 
-        JSONArray versionList = new JSONArray(DownloadUtils.downloadString(url));
+        JSONArray versionList = new JSONArray(
+                KiraziumSecureDownloads.downloadModrinthString(url, MAX_API_BYTES));
         JSONObject fallbackVersion = null;
         for (int i = 0; i < versionList.length(); i++) {
             JSONObject candidate = versionList.optJSONObject(i);
@@ -264,6 +268,18 @@ public class TexturePackFragment extends Fragment {
         return firstZip;
     }
 
+    private Bitmap decodeSafeIcon(byte[] data) {
+        if (data == null || data.length == 0 || data.length > MAX_ICON_BYTES) return null;
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeByteArray(data, 0, data.length, bounds);
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0
+                || bounds.outWidth > MAX_ICON_DIMENSION || bounds.outHeight > MAX_ICON_DIMENSION) {
+            return null;
+        }
+        return BitmapFactory.decodeByteArray(data, 0, data.length);
+    }
+
     private void loadIcon(TexturePack pack, ImageView imageView) {
         imageView.setTag(pack.projectId);
         imageView.setImageResource(R.drawable.ic_px_image);
@@ -277,10 +293,9 @@ public class TexturePackFragment extends Fragment {
 
         PojavApplication.sExecutorService.execute(() -> {
             try {
-                ByteArrayOutputStream output = new ByteArrayOutputStream();
-                DownloadUtils.download(pack.iconUrl, output);
-                byte[] data = output.toByteArray();
-                Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length);
+                byte[] data = KiraziumSecureDownloads.downloadModrinthBytes(
+                        pack.iconUrl, MAX_ICON_BYTES);
+                Bitmap bitmap = decodeSafeIcon(data);
                 if (bitmap == null) return;
                 mIconCache.put(pack.iconUrl, bitmap);
                 Tools.runOnUiThread(() -> {
@@ -289,7 +304,7 @@ public class TexturePackFragment extends Fragment {
                     if (pack.projectId.equals(tag)) imageView.setImageBitmap(bitmap);
                 });
             } catch (Exception ignored) {
-                // Keep the built-in resource-pack icon when an external icon cannot be loaded.
+                // Keep the built-in resource-pack icon when an external icon cannot be loaded safely.
             }
         });
     }
