@@ -15,7 +15,7 @@ import androidx.annotation.Nullable;
 import net.kdt.pojavlaunch.customcontrols.LayoutBitmaps;
 import net.kdt.pojavlaunch.utils.FileUtils;
 
-import org.apache.commons.io.IOUtils;
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -32,14 +32,20 @@ import git.artdeell.mojo.R;
  */
 @SuppressWarnings("IOStreamConstructor")
 public class ImportControlActivity extends Activity {
+    private static final String LOG_TAG = "ImportControlActivity";
+    private static final long MAX_IMPORT_BYTES = 8L * 1024L * 1024L;
+    private static final int MAX_FILE_NAME_LENGTH = 64;
+    private static final int MAX_CONTROLS = 512;
+    private static final int MAX_JOYSTICKS = 32;
 
     private Uri mUriData;
+    private File mTempFile;
     private boolean mHasIntentChanged = true;
     private volatile boolean mIsFileVerified = false;
+    private volatile boolean mImportCompleted = false;
 
     private EditText mEditText;
 
-    
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -71,13 +77,13 @@ public class ImportControlActivity extends Activity {
     protected void onPostResume() {
         super.onPostResume();
         if(!Tools.checkStorageInteractive(this)) {
-            // Don't try to read the file as when this check fails, external storage paths
-            // are no longer valid (likely unmounted).
-            // checkStorageInteractive() will finish this activity for us.
             return;
         }
         if(!mHasIntentChanged) return;
+
+        deleteTempFile();
         mIsFileVerified = false;
+        mImportCompleted = false;
         getUriData();
         if(mUriData == null) {
             finishAndRemoveTask();
@@ -86,25 +92,27 @@ public class ImportControlActivity extends Activity {
         mEditText.setText(trimFileName(Tools.getFileName(this, mUriData)));
         mHasIntentChanged = false;
 
-        //Import and verify thread
-        //Kill the app if the file isn't valid.
+        // Import and verify off the UI thread. Untrusted input is copied through a strict size cap.
         new Thread(() -> {
-            importControlFile();
+            boolean valid = importControlFile() && verify(mTempFile);
+            if(valid) {
+                mIsFileVerified = true;
+            } else {
+                deleteTempFile();
+                runOnUiThread(() -> {
+                    Toast.makeText(
+                            ImportControlActivity.this,
+                            getText(R.string.import_control_invalid_file),
+                            Toast.LENGTH_SHORT).show();
+                    finishAndRemoveTask();
+                });
+            }
+        }, "Kirazium-Control-Import").start();
 
-            if(verify())mIsFileVerified = true;
-            else runOnUiThread(() -> {
-                Toast.makeText(
-                        ImportControlActivity.this,
-                        getText(R.string.import_control_invalid_file),
-                        Toast.LENGTH_SHORT).show();
-                finishAndRemoveTask();
-            });
-        }).start();
-
-        //Auto show the keyboard
         Tools.MAIN_HANDLER.postDelayed(() -> {
+            if (isFinishing() || mEditText == null) return;
             InputMethodManager imm = (InputMethodManager) getApplicationContext().getSystemService(INPUT_METHOD_SERVICE);
-            imm.toggleSoftInput(InputMethodManager.SHOW_IMPLICIT, 0);
+            if (imm != null) imm.toggleSoftInput(InputMethodManager.SHOW_IMPLICIT, 0);
             mEditText.setSelection(mEditText.getText().length());
         }, 100);
     }
@@ -115,88 +123,159 @@ public class ImportControlActivity extends Activity {
      */
     public void startImport(View view) {
         String fileName = trimFileName(mEditText.getText().toString());
-        //Step 1 check for suffixes.
         if(!isFileNameValid(fileName)){
             Toast.makeText(this, getText(R.string.import_control_invalid_name), Toast.LENGTH_SHORT).show();
             return;
         }
-        if(!mIsFileVerified){
+        if(!mIsFileVerified || mTempFile == null || !mTempFile.isFile()){
             Toast.makeText(this, getText(R.string.import_control_verifying_file), Toast.LENGTH_LONG).show();
             return;
         }
 
-        new File(Tools.CTRLMAP_PATH + "/TMP_IMPORT_FILE.json").renameTo(new File(Tools.CTRLMAP_PATH + "/" + fileName + ".json"));
+        File destination = new File(Tools.CTRLMAP_PATH, fileName + ".json");
+        if (!isDestinationInsideControlDirectory(destination) || !mTempFile.renameTo(destination)) {
+            Toast.makeText(this, getText(R.string.import_control_invalid_file), Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        mImportCompleted = true;
+        mTempFile = null;
         Toast.makeText(getApplicationContext(), getText(R.string.import_control_done), Toast.LENGTH_SHORT).show();
         finishAndRemoveTask();
     }
 
-    /**
-     * Copy a the file from the Intent data with a provided name into the controlmap folder.
-     */
-    private void importControlFile(){
-        InputStream is;
+    /** Copy the shared file into a private temporary control-layout file with a strict byte cap. */
+    private boolean importControlFile(){
+        File controlDirectory = new File(Tools.CTRLMAP_PATH);
         try {
-            is = getContentResolver().openInputStream(mUriData);
-            OutputStream os = new FileOutputStream(Tools.CTRLMAP_PATH + "/" + "TMP_IMPORT_FILE" + ".json");
-            IOUtils.copy(is, os);
+            FileUtils.ensureDirectory(controlDirectory);
+            mTempFile = File.createTempFile("kirazium-control-import-", ".tmp", controlDirectory);
 
-            os.close();
-            is.close();
-        } catch (IOException e) {
-            e.printStackTrace();
+            try (InputStream input = getContentResolver().openInputStream(mUriData);
+                 OutputStream output = new FileOutputStream(mTempFile)) {
+                if (input == null) throw new IOException("Content provider returned no stream");
+
+                byte[] buffer = new byte[16 * 1024];
+                long total = 0L;
+                int read;
+                while ((read = input.read(buffer)) != -1) {
+                    total += read;
+                    if (total > MAX_IMPORT_BYTES) {
+                        throw new IOException("Control layout exceeds import size limit");
+                    }
+                    output.write(buffer, 0, read);
+                }
+                output.flush();
+                if (total <= 0L) throw new IOException("Control layout is empty");
+            }
+            return true;
+        } catch (Exception error) {
+            Log.w(LOG_TAG, "Failed to safely copy shared control layout", error);
+            deleteTempFile();
+            return false;
         }
     }
 
     /**
      * Tell if the clean version of the filename is valid.
-     * @param fileName the string to test
-     * @return whether the filename is valid
      */
     private static boolean isFileNameValid(String fileName){
         fileName = trimFileName(fileName);
+        if(fileName.isEmpty() || fileName.length() > MAX_FILE_NAME_LENGTH) return false;
+        if(".".equals(fileName) || "..".equals(fileName)) return false;
+        for (int i = 0; i < fileName.length(); i++) {
+            if (Character.isISOControl(fileName.charAt(i))) return false;
+        }
 
-        if(fileName.isEmpty()) return false;
-        return !FileUtils.exists(Tools.CTRLMAP_PATH + "/" + fileName + ".json");
+        File destination = new File(Tools.CTRLMAP_PATH, fileName + ".json");
+        return isDestinationInsideControlDirectory(destination) && !destination.exists();
     }
 
-    /**
-     * Remove or undesirable chars from the string
-     * @param fileName The string to trim
-     * @return The trimmed string
-     */
+    /** Remove path separators and unsafe filesystem characters while preserving normal Unicode names. */
     private static String trimFileName(String fileName){
-        return fileName
-                .replace(".json", "")
-                .replaceAll("%..", "/")
-                .replace("/", "")
-                .replace("\\", "")
+        if (fileName == null) return "";
+        String clean = fileName.trim();
+        if (clean.toLowerCase(java.util.Locale.ROOT).endsWith(".json")) {
+            clean = clean.substring(0, clean.length() - 5);
+        }
+        clean = clean
+                .replace('/', '_')
+                .replace('\\', '_')
+                .replace(':', '_')
+                .replace('*', '_')
+                .replace('?', '_')
+                .replace('"', '_')
+                .replace('<', '_')
+                .replace('>', '_')
+                .replace('|', '_')
                 .trim();
+        return clean.length() > MAX_FILE_NAME_LENGTH
+                ? clean.substring(0, MAX_FILE_NAME_LENGTH).trim()
+                : clean;
     }
 
-    /**
-     * Tries to get an Uri from the various sources
-     */
+    /** Tries to get a content:// Uri from the supported share intent forms. */
+    @SuppressWarnings("deprecation")
     private void getUriData(){
-        mUriData = getIntent().getData();
-        if(mUriData != null) return;
-        try {
-            mUriData = getIntent().getClipData().getItemAt(0).getUri();
-        }catch (Exception ignored){}
+        Intent intent = getIntent();
+        Uri candidate = intent == null ? null : intent.getData();
+        if (candidate == null && intent != null && intent.getClipData() != null
+                && intent.getClipData().getItemCount() > 0) {
+            candidate = intent.getClipData().getItemAt(0).getUri();
+        }
+        if (candidate == null && intent != null) {
+            Object stream = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+            if (stream instanceof Uri) candidate = (Uri) stream;
+        }
+
+        // Never let this exported activity read file://, http(s):// or custom-scheme data.
+        mUriData = candidate != null && "content".equalsIgnoreCase(candidate.getScheme())
+                ? candidate : null;
     }
 
     /**
-     * Verify if the control file is valid
-     * @return Whether the control file is valid
+     * Verify the parsed control structure and keep pathological list sizes out of the editor/game.
      */
-    private static boolean verify() {
+    private static boolean verify(File file) {
+        if (file == null || !file.isFile() || file.length() <= 0L || file.length() > MAX_IMPORT_BYTES) {
+            return false;
+        }
         try {
-            LayoutBitmaps.ControlsContainer layout = LayoutBitmaps.load(new File(Tools.CTRLMAP_PATH,"TMP_IMPORT_FILE.json"));
-            JSONObject layoutJobj = new JSONObject(layout.mControlsJson);
-            return layoutJobj.has("version") && layoutJobj.has("mControlDataList");
-        }catch (IOException | JSONException e) {
-            Log.w("ImportControlActivity", "Failed to validate layout", e);
+            LayoutBitmaps.ControlsContainer layout = LayoutBitmaps.load(file);
+            JSONObject layoutObject = new JSONObject(layout.mControlsJson);
+            JSONArray controls = layoutObject.optJSONArray("mControlDataList");
+            JSONArray joysticks = layoutObject.optJSONArray("mJoystickDataList");
+            return layoutObject.has("version")
+                    && controls != null
+                    && controls.length() <= MAX_CONTROLS
+                    && (joysticks == null || joysticks.length() <= MAX_JOYSTICKS);
+        }catch (IOException | JSONException | RuntimeException error) {
+            Log.w(LOG_TAG, "Failed to validate layout", error);
             return false;
         }
     }
 
+    private static boolean isDestinationInsideControlDirectory(File destination) {
+        try {
+            File root = new File(Tools.CTRLMAP_PATH).getCanonicalFile();
+            File target = destination.getCanonicalFile();
+            return root.equals(target.getParentFile());
+        } catch (IOException error) {
+            return false;
+        }
+    }
+
+    private void deleteTempFile() {
+        File temp = mTempFile;
+        mTempFile = null;
+        if (temp != null && temp.isFile() && !temp.delete()) {
+            Log.w(LOG_TAG, "Could not delete temporary control import " + temp);
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (!mImportCompleted) deleteTempFile();
+    }
 }
