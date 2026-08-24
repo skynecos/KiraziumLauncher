@@ -32,13 +32,12 @@ import net.kdt.pojavlaunch.Tools;
 import net.kdt.pojavlaunch.instances.Instance;
 import net.kdt.pojavlaunch.instances.Instances;
 import net.kdt.pojavlaunch.instances.SelectedProfileInfo;
-import net.kdt.pojavlaunch.utils.DownloadUtils;
 import net.kdt.pojavlaunch.utils.FileUtils;
+import net.kdt.pojavlaunch.utils.KiraziumSecureDownloads;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -54,6 +53,10 @@ public class ModStoreFragment extends Fragment {
     private static final String LOG_TAG = "KiraziumModStore";
     private static final String MODRINTH_API = "https://api.modrinth.com/v2";
     private static final int RESULT_LIMIT = 30;
+    private static final int MAX_API_BYTES = 4 * 1024 * 1024;
+    private static final int MAX_ICON_BYTES = 2 * 1024 * 1024;
+    private static final int MAX_ICON_DIMENSION = 1024;
+    private static final long MAX_MOD_BYTES = 256L * 1024L * 1024L;
 
     private EditText mSearchInput;
     private ProgressBar mProgress;
@@ -140,7 +143,8 @@ public class ModStoreFragment extends Fragment {
                         "&index=downloads&query=" + Uri.encode(cleanQuery) +
                         "&facets=" + Uri.encode(facets);
 
-                JSONObject response = new JSONObject(DownloadUtils.downloadString(url));
+                JSONObject response = new JSONObject(
+                        KiraziumSecureDownloads.downloadModrinthString(url, MAX_API_BYTES));
                 JSONArray hits = response.optJSONArray("hits");
                 List<ModItem> mods = new ArrayList<>();
                 if (hits != null) {
@@ -238,7 +242,8 @@ public class ModStoreFragment extends Fragment {
                 "&loaders=" + Uri.encode(loaders) +
                 "&include_changelog=false";
 
-        JSONArray versionList = new JSONArray(DownloadUtils.downloadString(url));
+        JSONArray versionList = new JSONArray(
+                KiraziumSecureDownloads.downloadModrinthString(url, MAX_API_BYTES));
         JSONObject fallback = null;
         for (int i = 0; i < versionList.length(); i++) {
             JSONObject candidate = versionList.optJSONObject(i);
@@ -250,8 +255,8 @@ public class ModStoreFragment extends Fragment {
     }
 
     private JSONObject fetchVersion(String versionId) throws Exception {
-        return new JSONObject(DownloadUtils.downloadString(
-                MODRINTH_API + "/version/" + Uri.encode(versionId)));
+        return new JSONObject(KiraziumSecureDownloads.downloadModrinthString(
+                MODRINTH_API + "/version/" + Uri.encode(versionId), MAX_API_BYTES));
     }
 
     private boolean jsonArrayContains(JSONArray array, String expected) {
@@ -269,12 +274,6 @@ public class ModStoreFragment extends Fragment {
                 && jsonArrayContains(loaders, profile.loader.modrinthId);
     }
 
-    /**
-     * Modrinth can pin a dependency to an exact version. Some projects later replace that exact
-     * dependency build, or the pinned build may not match the currently selected loader/game
-     * version. Prefer it when it is valid, then safely fall back to the dependency project's
-     * compatible version instead of aborting the whole installation immediately.
-     */
     private JSONObject resolveRequiredDependency(JSONObject dependency,
                                                  SelectedProfileInfo profile) throws Exception {
         String dependencyVersionId = dependency.optString("version_id", "");
@@ -344,27 +343,17 @@ public class ModStoreFragment extends Fragment {
         if (TextUtils.isEmpty(downloadUrl)) throw new IOException("Mod download URL is missing");
 
         JSONObject hashes = file.optJSONObject("hashes");
-        String sha1 = hashes == null ? null : hashes.optString("sha1", null);
-
-        if (destination.isFile() && destination.length() == 0L && !destination.delete()) {
-            throw new IOException("Could not replace an incomplete mod file: " + filename);
-        }
+        String sha512 = hashes == null ? null : hashes.optString("sha512", null);
+        long expectedSize = file.optLong("size", -1L);
 
         try {
-            DownloadUtils.ensureSha1(destination, sha1, () -> {
-                DownloadUtils.downloadFile(downloadUrl, destination);
-                return null;
-            });
+            KiraziumSecureDownloads.downloadVerifiedModrinthFile(
+                    downloadUrl, destination, sha512, expectedSize, MAX_MOD_BYTES);
         } catch (Exception exception) {
             if (destination.isFile() && !destination.delete()) {
-                Log.w(LOG_TAG, "Could not delete incomplete JAR " + destination);
+                Log.w(LOG_TAG, "Could not delete invalid JAR " + destination);
             }
             throw exception;
-        }
-
-        if (!destination.isFile() || destination.length() <= 0L) {
-            if (destination.isFile()) destination.delete();
-            throw new IOException("Downloaded mod JAR is empty: " + filename);
         }
     }
 
@@ -396,6 +385,18 @@ public class ModStoreFragment extends Fragment {
         return message;
     }
 
+    private Bitmap decodeSafeIcon(byte[] data) {
+        if (data == null || data.length == 0 || data.length > MAX_ICON_BYTES) return null;
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeByteArray(data, 0, data.length, bounds);
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0
+                || bounds.outWidth > MAX_ICON_DIMENSION || bounds.outHeight > MAX_ICON_DIMENSION) {
+            return null;
+        }
+        return BitmapFactory.decodeByteArray(data, 0, data.length);
+    }
+
     private void loadIcon(ModItem mod, ImageView imageView) {
         imageView.setTag(mod.projectId);
         imageView.setImageResource(R.drawable.ic_px_java);
@@ -409,10 +410,9 @@ public class ModStoreFragment extends Fragment {
 
         PojavApplication.sExecutorService.execute(() -> {
             try {
-                ByteArrayOutputStream output = new ByteArrayOutputStream();
-                DownloadUtils.download(mod.iconUrl, output);
-                byte[] data = output.toByteArray();
-                Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length);
+                byte[] data = KiraziumSecureDownloads.downloadModrinthBytes(
+                        mod.iconUrl, MAX_ICON_BYTES);
+                Bitmap bitmap = decodeSafeIcon(data);
                 if (bitmap == null) return;
                 mIconCache.put(mod.iconUrl, bitmap);
                 Tools.runOnUiThread(() -> {
@@ -420,7 +420,7 @@ public class ModStoreFragment extends Fragment {
                     if (mod.projectId.equals(imageView.getTag())) imageView.setImageBitmap(bitmap);
                 });
             } catch (Exception ignored) {
-                // Keep the built-in mod icon when a remote icon cannot be loaded.
+                // Keep the built-in mod icon when a remote icon cannot be loaded safely.
             }
         });
     }
