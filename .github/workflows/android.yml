@@ -33,11 +33,11 @@ jobs:
 
       - name: Get LTW renderer
         uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11 # v6
-        continue-on-error: true
         with:
           repo: MojoLauncher/LTW
           workflow: android.yml
           workflow_conclusion: success
+          commit: 3aca75d9f3f05afd0b02a3d8f686084d968fa200
           name: output-aar
           path: app_pojavlauncher/libs
 
