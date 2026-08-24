@@ -39,6 +39,12 @@ public final class KiraziumUpdater {
             "https://api.github.com/repos/skynecos/KiraziumLauncher/releases/latest";
     private static final String APK_ASSET_NAME = "KiraziumLauncher.apk";
     private static final String CHECKSUM_ASSET_NAME = APK_ASSET_NAME + ".sha512";
+    private static final byte[] EXPECTED_KIRAZIUM_CERT_SHA256 = new byte[] {
+            32, 109, 10, 98, 57, 115, (byte) 209, 43,
+            111, 80, (byte) 241, 71, (byte) 214, (byte) 233, 65, 124,
+            22, 79, 59, 102, (byte) 163, 12, (byte) 225, (byte) 244,
+            24, (byte) 195, 73, 64, (byte) 233, 75, (byte) 183, 85
+    };
     private static final String PREFS_NAME = "kirazium_updater";
     private static final String KEY_LAST_CHECK = "last_check";
     private static final String KEY_PENDING_APK = "pending_apk";
@@ -294,6 +300,10 @@ public final class KiraziumUpdater {
         }
 
         Signature[] archiveSignatures = getSignatures(archive);
+        if (!hasPinnedProductionCertificate(archiveSignatures)) {
+            throw new SecurityException("APK Kirazium production sertifikasıyla imzalanmamış.");
+        }
+
         Signature[] installedSignatures = getSignatures(installed);
         if (!hasMatchingSignature(archiveSignatures, installedSignatures)) {
             throw new SecurityException("APK imzası mevcut Kirazium Launcher imzasıyla eşleşmiyor.");
@@ -308,6 +318,17 @@ public final class KiraziumUpdater {
                     : info.signingInfo.getSigningCertificateHistory();
         }
         return info.signatures;
+    }
+
+    private static boolean hasPinnedProductionCertificate(Signature[] signatures) throws Exception {
+        if (signatures == null || signatures.length == 0) return false;
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        for (Signature signature : signatures) {
+            if (signature == null) continue;
+            byte[] actualDigest = digest.digest(signature.toByteArray());
+            if (MessageDigest.isEqual(EXPECTED_KIRAZIUM_CERT_SHA256, actualDigest)) return true;
+        }
+        return false;
     }
 
     private static boolean hasMatchingSignature(Signature[] first, Signature[] second) {
