@@ -28,10 +28,10 @@
 
     <application
         android:name="net.kdt.pojavlaunch.PojavApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:allowNativeHeapPointerTagging="false"
         android:appCategory="game"
-        android:hasFragileUserData="true"
+        android:hasFragileUserData="false"
         android:icon="@drawable/ic_kirazium_launcher"
         android:isGame="true"
         android:label="@string/app_short_name"
