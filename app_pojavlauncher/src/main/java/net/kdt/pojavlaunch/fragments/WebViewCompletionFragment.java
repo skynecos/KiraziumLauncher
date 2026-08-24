@@ -2,12 +2,15 @@ package net.kdt.pojavlaunch.fragments;
 
 import android.annotation.SuppressLint;
 import android.graphics.Bitmap;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -21,7 +24,6 @@ public abstract class WebViewCompletionFragment extends Fragment {
     private final String mTrackedUrl;
     private final String mAuthUrl;
     private WebView mWebview;
-    // Technically the client is blank (or there is none) when the fragment is initialized
     private boolean mBlankClient = true;
     private boolean mIsCompleted = false;
 
@@ -39,23 +41,38 @@ public abstract class WebViewCompletionFragment extends Fragment {
         return mWebview;
     }
 
-    // WebView.restoreState() does not restore the WebSettings or the client, so set them there
-    // separately. Note that general state should not be altered here (aka no loading pages, no manipulating back/front lists),
-    // to avoid "undesirable side-effects"
-    @SuppressLint("SetJavaScriptEnabled")
+    @SuppressLint({"SetJavaScriptEnabled", "ObsoleteSdkInt"})
     private void setWebViewSettings() {
         WebSettings settings = mWebview.getSettings();
+
+        // JavaScript is required by the identity providers. Everything unrelated to HTTPS OAuth is disabled.
         settings.setJavaScriptEnabled(true);
+        settings.setAllowFileAccess(false);
+        settings.setAllowContentAccess(false);
+        settings.setAllowFileAccessFromFileURLs(false);
+        settings.setAllowUniversalAccessFromFileURLs(false);
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        settings.setGeolocationEnabled(false);
+        settings.setMediaPlaybackRequiresUserGesture(true);
+        settings.setSaveFormData(false);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            settings.setSafeBrowsingEnabled(true);
+        }
+
         mWebview.setWebViewClient(new WebViewTrackClient());
         mBlankClient = false;
     }
 
     private void startNewSession() {
         CookieManager.getInstance().removeAllCookies((b)->{
+            if (mWebview == null) return;
             mWebview.clearHistory();
             mWebview.clearCache(true);
             mWebview.clearFormData();
-            mWebview.clearHistory();
+            if (!isAllowedWebUrl(mAuthUrl)) {
+                Log.e("OAuthWebView", "Blocked non-HTTPS OAuth start URL");
+                return;
+            }
             mWebview.loadUrl(mAuthUrl);
         });
     }
@@ -64,8 +81,6 @@ public abstract class WebViewCompletionFragment extends Fragment {
         Log.i("MSAuthFragment","Restoring state...");
         if(mWebview.restoreState(savedInstanceState) == null) {
             Log.w("MSAuthFragment", "Failed to restore state, starting afresh");
-            // if, for some reason, we failed to restore our session,
-            // just start afresh
             startNewSession();
         }
     }
@@ -73,39 +88,71 @@ public abstract class WebViewCompletionFragment extends Fragment {
     @Override
     public void onStart() {
         super.onStart();
-        // If we have switched to a blank client and haven't fully gone though the lifecycle callbacks to restore it,
-        // restore it here.
-        if(mBlankClient) mWebview.setWebViewClient(new WebViewTrackClient());
+        if(mBlankClient) {
+            mWebview.setWebViewClient(new WebViewTrackClient());
+            mBlankClient = false;
+        }
     }
 
     @Override
     public void onSaveInstanceState(@NonNull Bundle outState) {
-        // Since the value cannot be null, just create a "blank" client. This is done to not let Android
-        // kill us if something happens after the state gets saved, when we can't do fragment transitions
         mWebview.setWebViewClient(new WebViewClient());
-        // For some dumb reason state is saved even when Android won't actually destroy the activity.
-        // Let the fragment know that the client is blank so that we can restore it in onStart()
-        // (it was the earliest lifecycle call actually invoked in this case)
         mBlankClient = true;
         super.onSaveInstanceState(outState);
         mWebview.saveState(outState);
     }
 
-    /* Expose webview actions to others */
-    public boolean canGoBack(){ return mWebview.canGoBack();}
-    public void goBack(){ mWebview.goBack();}
+    public boolean canGoBack(){ return mWebview != null && mWebview.canGoBack();}
+    public void goBack(){ if (mWebview != null) mWebview.goBack();}
 
-    /** Client to track when to sent the data to the launcher */
+    private boolean isTrackedUrl(String url) {
+        if (url == null || mTrackedUrl == null || mTrackedUrl.isEmpty()) return false;
+        Uri callback = Uri.parse(url);
+        String callbackScheme = callback.getScheme();
+        if (callbackScheme == null) return false;
+
+        Uri tracked = Uri.parse(mTrackedUrl);
+        String expectedScheme = tracked.getScheme();
+        if (expectedScheme == null) expectedScheme = mTrackedUrl;
+        if (!expectedScheme.equalsIgnoreCase(callbackScheme)) return false;
+
+        // For tracked URLs that specify host/path, preserve the original exact-prefix requirement too.
+        if (mTrackedUrl.contains("://")) {
+            return url.regionMatches(true, 0, mTrackedUrl, 0, mTrackedUrl.length());
+        }
+        return true;
+    }
+
+    private boolean isAllowedWebUrl(String url) {
+        if (url == null) return false;
+        if ("about:blank".equalsIgnoreCase(url)) return true;
+        Uri uri = Uri.parse(url);
+        return "https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null;
+    }
+
+    /** Client that only permits HTTPS navigation plus the exact OAuth callback scheme. */
     class WebViewTrackClient extends WebViewClient {
-
-        @Override
-        public boolean shouldOverrideUrlLoading(WebView view, String url) {
-            if(url.startsWith(mTrackedUrl)) {
+        private boolean handleUrl(String url) {
+            if(isTrackedUrl(url)) {
                 internalSignalCompletion(url);
                 return true;
             }
+            if (!isAllowedWebUrl(url)) {
+                Log.w("OAuthWebView", "Blocked non-HTTPS OAuth navigation");
+                return true;
+            }
+            return false;
+        }
 
-            return super.shouldOverrideUrlLoading(view, url);
+        @Override
+        public boolean shouldOverrideUrlLoading(WebView view, String url) {
+            return handleUrl(url);
+        }
+
+        @Override
+        public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+            return request == null || request.getUrl() == null
+                    || handleUrl(request.getUrl().toString());
         }
 
         @Override
@@ -113,9 +160,7 @@ public abstract class WebViewCompletionFragment extends Fragment {
 
         @Override
         public void onPageFinished(WebView view, String url) {
-            if(url.startsWith(mTrackedUrl)) {
-                internalSignalCompletion(url);
-            }
+            if(isTrackedUrl(url)) internalSignalCompletion(url);
         }
     }
 
