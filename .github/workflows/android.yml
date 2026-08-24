@@ -185,7 +185,7 @@ jobs:
           VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs out/KiraziumLauncher.apk)"
           printf '%s\n' "$VERIFY_OUTPUT"
           SIGNED_CERT_SHA256="$(printf '%s\n' "$VERIFY_OUTPUT" \
-            | awk -F': ' '/certificate SHA-256 digest/{gsub(":", "", $2); print tolower($2); exit}')"
+            | awk -F': ' '/certificate SHA-256 digest/{value=$NF; gsub(":", "", value); print tolower(value); exit}')"
 
           if [ -z "$SIGNED_CERT_SHA256" ] || [ "$SIGNED_CERT_SHA256" != "$EXPECTED_KIRAZIUM_CERT_SHA256" ]; then
             echo "::error::Signed APK certificate does not match the pinned Kirazium production certificate."
