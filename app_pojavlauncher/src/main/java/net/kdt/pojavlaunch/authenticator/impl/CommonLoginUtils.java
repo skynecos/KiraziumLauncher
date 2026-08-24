@@ -19,11 +19,17 @@ import git.artdeell.mojo.R;
 public class CommonLoginUtils {
 
     public static OAuthTokenResponse exchangeAuthCode(URL url, String formData) throws IOException {
+        if (!"https".equalsIgnoreCase(url.getProtocol())) {
+            throw new IOException("Refusing non-HTTPS authentication endpoint");
+        }
+
         HttpURLConnection conn = (HttpURLConnection)url.openConnection();
         conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
         conn.setRequestProperty("charset", "utf-8");
         conn.setRequestProperty("Content-Length", Integer.toString(formData.getBytes(StandardCharsets.UTF_8).length));
         conn.setRequestMethod("POST");
+        conn.setConnectTimeout(15000);
+        conn.setReadTimeout(30000);
         conn.setUseCaches(false);
         conn.setDoInput(true);
         conn.setDoOutput(true);
@@ -38,9 +44,18 @@ public class CommonLoginUtils {
                 conn.disconnect();
             }
         }else{
-            Log.i("CommonLogin", "Auth fail: "+Tools.read(conn.getErrorStream()));
-            throw getResponseThrowable(conn);
+            // Never write OAuth error bodies to Logcat: identity providers may echo sensitive data.
+            Log.w("CommonLogin", "Authentication request rejected with HTTP " + conn.getResponseCode());
+            try {
+                return throwResponse(conn);
+            } finally {
+                conn.disconnect();
+            }
         }
+    }
+
+    private static OAuthTokenResponse throwResponse(HttpURLConnection conn) throws IOException {
+        throw getResponseThrowable(conn);
     }
 
     /**
@@ -48,6 +63,9 @@ public class CommonLoginUtils {
      * @return the data converted as a form string for a POST request
      */
     public static String convertToFormData(String... data) throws UnsupportedEncodingException {
+        if (data == null || (data.length % 2) != 0) {
+            throw new IllegalArgumentException("Form data must contain key/value pairs");
+        }
         StringBuilder builder = new StringBuilder();
         for(int i=0; i<data.length; i+=2){
             if (builder.length() > 0) builder.append("&");
@@ -59,10 +77,12 @@ public class CommonLoginUtils {
     }
 
     public static RuntimeException getResponseThrowable(HttpURLConnection conn) throws IOException {
-        Log.i("MicrosoftLogin", "Error code: " + conn.getResponseCode() + ": " + conn.getResponseMessage());
-        if(conn.getResponseCode() == 429) {
+        int responseCode = conn.getResponseCode();
+        Log.w("Authentication", "Authentication endpoint returned HTTP " + responseCode);
+        if(responseCode == 429) {
             return new PresentedException(R.string.microsoft_login_retry_later);
         }
-        return new RuntimeException(conn.getResponseMessage());
+        String responseMessage = conn.getResponseMessage();
+        return new RuntimeException(responseMessage == null ? "Authentication request failed" : responseMessage);
     }
 }
