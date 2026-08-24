@@ -82,6 +82,7 @@ jobs:
       actions: read
     env:
       EXPECTED_KIRAZIUM_CERT_SHA256: "206d0a623973d12b6f50f147d6e9417c164f3b66a30ce1f418c34940e94bb755"
+      EXPECTED_KIRAZIUM_KEYSTORE_SHA256: "c28442da2dbbc2b49df476077f5959b7970c3116b71e7929835dec39a9df93f5"
 
     steps:
       - name: Download unsigned APK from verified build
@@ -90,21 +91,26 @@ jobs:
           name: KiraziumLauncher-Unsigned-CI
           path: unsigned
 
-      - name: Prepare and pin private Kirazium signing key
+      - name: Prepare and verify private Kirazium signing key
         env:
           KIRAZIUM_KEYSTORE_B64: ${{ secrets.KIRAZIUM_KEYSTORE_B64 }}
           KIRAZIUM_KEYSTORE_PASSWORD: ${{ secrets.KIRAZIUM_KEYSTORE_PASSWORD }}
         run: |
           set -euo pipefail
           if [ -z "${KIRAZIUM_KEYSTORE_B64:-}" ] || [ -z "${KIRAZIUM_KEYSTORE_PASSWORD:-}" ]; then
-            echo "::error::Kirazium release signing secrets are missing. Add KIRAZIUM_KEYSTORE_B64 and KIRAZIUM_KEYSTORE_PASSWORD."
+            echo "::error::Kirazium release signing secrets are missing."
             exit 1
           fi
 
           SIGNING_DIR="$RUNNER_TEMP/kirazium-signing"
           mkdir -p "$SIGNING_DIR"
           chmod 700 "$SIGNING_DIR"
-          printf '%s' "$KIRAZIUM_KEYSTORE_B64" | base64 --decode > "$SIGNING_DIR/kirazium-release.jks"
+
+          NORMALIZED_KEYSTORE_B64="$(printf '%s' "$KIRAZIUM_KEYSTORE_B64" | tr -d '[:space:]')"
+          if ! printf '%s' "$NORMALIZED_KEYSTORE_B64" | base64 --decode > "$SIGNING_DIR/kirazium-release.jks"; then
+            echo "::error::KIRAZIUM_KEYSTORE_B64 is not valid Base64. Copy the complete kirazium-release.jks.b64 content into the secret."
+            exit 1
+          fi
           chmod 600 "$SIGNING_DIR/kirazium-release.jks"
 
           if [ ! -s "$SIGNING_DIR/kirazium-release.jks" ]; then
@@ -112,10 +118,22 @@ jobs:
             exit 1
           fi
 
-          ACTUAL_CERT_SHA256="$(keytool -list -v \
+          ACTUAL_KEYSTORE_SHA256="$(sha256sum "$SIGNING_DIR/kirazium-release.jks" | awk '{print $1}')"
+          if [ "$ACTUAL_KEYSTORE_SHA256" != "$EXPECTED_KIRAZIUM_KEYSTORE_SHA256" ]; then
+            echo "::error::KIRAZIUM_KEYSTORE_B64 does not match the Kirazium production keystore backup."
+            exit 1
+          fi
+
+          SIGNING_PASSWORD="$(printf '%s' "$KIRAZIUM_KEYSTORE_PASSWORD" | tr -d '\r\n')"
+          if ! KEYTOOL_OUTPUT="$(keytool -list -v \
             -keystore "$SIGNING_DIR/kirazium-release.jks" \
-            -storepass "$KIRAZIUM_KEYSTORE_PASSWORD" \
-            -alias kirazium \
+            -storepass "$SIGNING_PASSWORD" \
+            -alias kirazium 2>/dev/null)"; then
+            echo "::error::KIRAZIUM_KEYSTORE_PASSWORD does not unlock the Kirazium production keystore."
+            exit 1
+          fi
+
+          ACTUAL_CERT_SHA256="$(printf '%s\n' "$KEYTOOL_OUTPUT" \
             | awk -F': ' '/SHA256:/{gsub(":", "", $2); print tolower($2); exit}')"
 
           if [ -z "$ACTUAL_CERT_SHA256" ] || [ "$ACTUAL_CERT_SHA256" != "$EXPECTED_KIRAZIUM_CERT_SHA256" ]; then
@@ -152,12 +170,15 @@ jobs:
             exit 1
           fi
 
+          SIGNING_PASSWORD="$(printf '%s' "$KIRAZIUM_KEYSTORE_PASSWORD" | tr -d '\r\n')"
+          export KIRAZIUM_SIGNING_PASSWORD="$SIGNING_PASSWORD"
+
           mkdir -p out
           "$APKSIGNER" sign \
             --ks "$RUNNER_TEMP/kirazium-signing/kirazium-release.jks" \
             --ks-key-alias kirazium \
-            --ks-pass env:KIRAZIUM_KEYSTORE_PASSWORD \
-            --key-pass env:KIRAZIUM_KEYSTORE_PASSWORD \
+            --ks-pass env:KIRAZIUM_SIGNING_PASSWORD \
+            --key-pass env:KIRAZIUM_SIGNING_PASSWORD \
             --out out/KiraziumLauncher.apk \
             "$UNSIGNED_APK"
 
