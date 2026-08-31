@@ -30,6 +30,77 @@ replace(
 """
 )
 
+# 1b) Android's dynamic linker does not automatically search the helper APK's
+#     native-lib directory when FFmpeg is exec()'d from the Minecraft process.
+#     Route every FFmpeg child process through one builder that prepends the
+#     helper's directory to LD_LIBRARY_PATH, so libavdevice/libavfilter/etc.
+#     resolve from the same installed APK.
+replace(
+    "media/player/src/main/kotlin/com/dreamdisplays/media/player/process/FFmpegBinary.kt",
+    """    /**
+     * Resolves the `FFmpeg` binary in the background to minimize latency on first use, and probes
+""",
+    """    /**
+     * Builds a process for [command]. On Android/Mojo the FFmpeg executable lives in a
+     * different APK's native-library directory; Android's linker will execute it but does
+     * not add that directory to the child process library search path automatically.
+     */
+    fun processBuilder(command: List<String>): ProcessBuilder {
+        val builder = ProcessBuilder(command)
+        val pojavFfmpeg = System.getenv("POJAV_FFMPEG_PATH")?.takeIf { it.isNotBlank() }
+        if (pojavFfmpeg != null && command.firstOrNull() == pojavFfmpeg) {
+            val libDir = File(pojavFfmpeg).parentFile?.absolutePath
+            if (!libDir.isNullOrBlank()) {
+                val env = builder.environment()
+                val current = env["LD_LIBRARY_PATH"]?.takeIf { it.isNotBlank() }
+                    ?: System.getenv("LD_LIBRARY_PATH")?.takeIf { it.isNotBlank() }
+                env["LD_LIBRARY_PATH"] = if (current == null) libDir else "$libDir:$current"
+            }
+        }
+        return builder
+    }
+
+    /**
+     * Resolves the `FFmpeg` binary in the background to minimize latency on first use, and probes
+"""
+)
+
+replace(
+    "media/player/src/main/kotlin/com/dreamdisplays/media/player/process/FFmpegCapabilities.kt",
+    """                val proc = ProcessBuilder(bin, "-hide_banner", "-filters")
+                    .redirectErrorStream(true)
+                    .start()
+""",
+    """                val proc = FFmpegBinary.processBuilder(listOf(bin, "-hide_banner", "-filters"))
+                    .redirectErrorStream(true)
+                    .start()
+"""
+)
+
+p = ROOT / "media/player/src/main/kotlin/com/dreamdisplays/media/player/process/MediaProcess.kt"
+s = p.read_text()
+old = "ProcessBuilder(cmd).start()"
+count = s.count(old)
+if count != 3:
+    raise SystemExit(f"Expected 3 MediaProcess ProcessBuilder(cmd) sites, found {count}")
+s = s.replace(old, "FFmpegBinary.processBuilder(cmd).start()")
+old_video = """        ProcessBuilder(
+            videoArgs(
+                ffmpeg, url, w, h, offsetNanos, hwAccel, VideoTransport.PPM, fps, alreadyResolved, seekByDecoding,
+            ),
+        ).start()
+"""
+new_video = """        FFmpegBinary.processBuilder(
+            videoArgs(
+                ffmpeg, url, w, h, offsetNanos, hwAccel, VideoTransport.PPM, fps, alreadyResolved, seekByDecoding,
+            ),
+        ).start()
+"""
+if old_video not in s:
+    raise SystemExit("MediaProcess buildVideo anchor not found")
+s = s.replace(old_video, new_video, 1)
+p.write_text(s)
+
 # 2) Android is reported as Linux, but VAAPI is a desktop Linux API. Never select it there.
 replace(
     "media/player/src/main/kotlin/com/dreamdisplays/media/player/process/HwAccelBackend.kt",
@@ -135,7 +206,7 @@ gp = ROOT / "gradle.properties"
 g = gp.read_text()
 for old in ("version=1.9.5-dev", "version=1.9.5", "version=1.10.0-dev"):
     if old in g:
-        g = g.replace(old, "version=1.9.5-kirazium-android1", 1)
+        g = g.replace(old, "version=1.9.5-kirazium-android2", 1)
         break
 gp.write_text(g)
 
@@ -145,4 +216,4 @@ if not active.is_file():
     raise SystemExit("Dream Displays 1.9.5 Stonecutter layout not found: versions/active.txt")
 active.write_text("26.1.2\n")
 
-print("Applied Kirazium Android compatibility patches for Dream Displays 1.9.5 / MC 26.1.2.")
+print("Applied Kirazium Android compatibility patches v2 for Dream Displays 1.9.5 / MC 26.1.2.")
