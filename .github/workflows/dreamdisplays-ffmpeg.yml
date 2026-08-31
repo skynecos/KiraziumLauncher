@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - codex/dreamdisplays-ffmpeg
+    paths:
+      - ".github/workflows/dreamdisplays-ffmpeg.yml"
+      - "tools/dreamdisplays-ffmpeg/**"
   workflow_dispatch:
 
 permissions:
@@ -99,11 +102,14 @@ jobs:
 
           unzip -p "$APK" lib/arm64-v8a/libavformat.so > "$VERIFY_DIR/libavformat.so"
           unzip -p "$APK" lib/arm64-v8a/libavcodec.so > "$VERIFY_DIR/libavcodec.so"
+          unzip -p "$APK" lib/arm64-v8a/libavdevice.so > "$VERIFY_DIR/libavdevice.so"
           unzip -p "$APK" lib/arm64-v8a/libffmpeg.so > "$VERIFY_DIR/libffmpeg.so"
 
           test -s "$VERIFY_DIR/libavformat.so"
           test -s "$VERIFY_DIR/libavcodec.so"
+          test -s "$VERIFY_DIR/libavdevice.so"
           test -s "$VERIFY_DIR/libffmpeg.so"
+          readelf -d "$VERIFY_DIR/libffmpeg.so" | grep -q 'libavdevice.so'
           strings "$VERIFY_DIR/libavformat.so" | grep -q -- '--enable-gnutls'
           strings "$VERIFY_DIR/libavcodec.so" | grep -q -- '--enable-mediacodec'
 
