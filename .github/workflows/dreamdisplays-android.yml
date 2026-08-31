@@ -1,0 +1,73 @@
+name: Kirazium Dream Displays Android Mod
+
+on:
+  push:
+    branches:
+      - codex/dreamdisplays-ffmpeg
+    paths:
+      - ".github/workflows/dreamdisplays-android.yml"
+      - "tools/dreamdisplays-android/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DREAMDISPLAYS_UPSTREAM_COMMIT: "bb5e1457bd4717561d367b329440e507878748e1"
+
+jobs:
+  build-fabric-26-1-2:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Kirazium patch files
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+
+      - name: Fetch Dream Displays 1.9.5 source
+        run: |
+          set -euo pipefail
+          SRC="$RUNNER_TEMP/dreamdisplays"
+          git init "$SRC"
+          git -C "$SRC" remote add origin https://github.com/arnodoelinger/dreamdisplays.git
+          git -C "$SRC" fetch --depth 1 origin "$DREAMDISPLAYS_UPSTREAM_COMMIT"
+          git -C "$SRC" checkout --detach FETCH_HEAD
+          cp tools/dreamdisplays-android/apply-patches.py "$SRC/apply-kirazium-android-patches.py"
+
+      - name: Apply Android compatibility patches
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/dreamdisplays"
+          python3 ./apply-kirazium-android-patches.py
+          chmod +x ./gradlew
+
+      - name: Build Fabric 26.1.2 mod
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/dreamdisplays"
+          ./gradlew :platform:client:fabric:publishJar --no-daemon --stacktrace
+
+      - name: Collect patched mod
+        run: |
+          set -euo pipefail
+          SRC="$RUNNER_TEMP/dreamdisplays"
+          mkdir -p out
+          find "$SRC" -type f -path "*/build/libs/*.jar" -name "*dreamdisplays*.jar" -print
+          JAR="$(find "$SRC" -type f -path "*/build/libs/*.jar" -name "*dreamdisplays*.jar" ! -name "*sources*" ! -name "*dev*" | head -n 1)"
+          test -n "$JAR"
+          cp "$JAR" out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android1.jar
+          sha256sum out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android1.jar > out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android1.jar.sha256
+
+      - name: Upload Android-patched Dream Displays
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kirazium-DreamDisplays-Android-26.1.2
+          path: out/*
+          if-no-files-found: error
+          retention-days: 7
