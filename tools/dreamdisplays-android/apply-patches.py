@@ -121,6 +121,22 @@ replace(
 """
 )
 
+# 2b) OpenLTW advertises itself as an OpenGL backend, but it virtualizes desktop GL on top
+#     of GLES. Dream Displays therefore incorrectly selects its raw-OpenGL upload path.
+#     Force Android/Mojo through Minecraft's command-encoder texture upload path instead.
+replace(
+    "platform/client/common/src/main/kotlin/com/dreamdisplays/platform/client/render/RenderBackendCompat.kt",
+    """    /** True when raw OpenGL calls are safe (real GL backend and no Vulkan replacement). */
+    fun canUseDirectOpenGl(): Boolean = isOpenGlBackend() && !isVulkanModLoaded
+""",
+    """    /** True when raw OpenGL calls are safe (real GL backend and no Vulkan replacement). */
+    fun canUseDirectOpenGl(): Boolean {
+        if (System.getenv("POJAV_FFMPEG_PATH")?.isNotBlank() == true) return false
+        return isOpenGlBackend() && !isVulkanModLoaded
+    }
+"""
+)
+
 # 3) OpenLTW/GLES does not expose the desktop GL4 persistent-PBO barrier path reliably.
 #    On Android, upload decoded frames directly from RAM to the texture and bypass PBO/fence/GL42.
 p = ROOT / "platform/client/common/src/main/kotlin/com/dreamdisplays/platform/client/render/AsyncTextureUploader.kt"
@@ -206,7 +222,7 @@ gp = ROOT / "gradle.properties"
 g = gp.read_text()
 for old in ("version=1.9.5-dev", "version=1.9.5", "version=1.10.0-dev"):
     if old in g:
-        g = g.replace(old, "version=1.9.5-kirazium-android2", 1)
+        g = g.replace(old, "version=1.9.5-kirazium-android3", 1)
         break
 gp.write_text(g)
 
@@ -216,4 +232,4 @@ if not active.is_file():
     raise SystemExit("Dream Displays 1.9.5 Stonecutter layout not found: versions/active.txt")
 active.write_text("26.1.2\n")
 
-print("Applied Kirazium Android compatibility patches v2 for Dream Displays 1.9.5 / MC 26.1.2.")
+print("Applied Kirazium Android compatibility patches v3 for Dream Displays 1.9.5 / MC 26.1.2.")
