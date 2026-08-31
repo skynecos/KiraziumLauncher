@@ -1,0 +1,125 @@
+name: Kirazium Dream Displays FFmpeg
+
+on:
+  push:
+    branches:
+      - codex/dreamdisplays-ffmpeg
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FFMPEG_PLUGIN_COMMIT: "5422b575f2402810ba9bfdc07c3f78bab98a15a2"
+  FFMPEG_KIT_COMMIT: "97760a31349439243487a99adbcde09e9dabe458"
+  ANDROID_NDK_VERSION: "27.3.13750724"
+
+jobs:
+  build-arm64-test-apk:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout Kirazium build files
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Install native build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            autogen autoconf automake autopoint build-essential cmake gettext \
+            gperf libtool libtool-bin nasm pkg-config yasm
+
+      - name: Install pinned Android NDK
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$SDK_ROOT" ]; then
+            echo "::error::Android SDK is unavailable on the runner."
+            exit 1
+          fi
+
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager \
+            "ndk;${ANDROID_NDK_VERSION}" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$SDK_ROOT/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Fetch pinned FFmpeg helper sources
+        run: |
+          set -euo pipefail
+          PLUGIN_DIR="$RUNNER_TEMP/FFmpegPlugin"
+
+          git init "$PLUGIN_DIR"
+          git -C "$PLUGIN_DIR" remote add origin https://github.com/MojoLauncher/FFmpegPlugin.git
+          git -C "$PLUGIN_DIR" fetch --depth 1 origin "$FFMPEG_PLUGIN_COMMIT"
+          git -C "$PLUGIN_DIR" checkout --detach FETCH_HEAD
+
+          git init "$PLUGIN_DIR/ffmpeg-kit"
+          git -C "$PLUGIN_DIR/ffmpeg-kit" remote add origin https://github.com/arthenica/ffmpeg-kit.git
+          git -C "$PLUGIN_DIR/ffmpeg-kit" fetch --depth 1 origin "$FFMPEG_KIT_COMMIT"
+          git -C "$PLUGIN_DIR/ffmpeg-kit" checkout --detach FETCH_HEAD
+          git -C "$PLUGIN_DIR/ffmpeg-kit" apply "$PLUGIN_DIR/scripts/ffmpeg_enable_executable.diff"
+
+      - name: Build HTTPS-enabled helper APK
+        run: |
+          set -euo pipefail
+          chmod +x tools/dreamdisplays-ffmpeg/build-test-apk.sh
+          tools/dreamdisplays-ffmpeg/build-test-apk.sh "$RUNNER_TEMP/FFmpegPlugin"
+
+      - name: Verify APK capabilities
+        run: |
+          set -euo pipefail
+          APK="$RUNNER_TEMP/FFmpegPlugin/app/build/outputs/apk/debug/app-debug.apk"
+          VERIFY_DIR="$RUNNER_TEMP/ffmpeg-verify"
+          mkdir -p "$VERIFY_DIR" out
+
+          unzip -p "$APK" lib/arm64-v8a/libavformat.so > "$VERIFY_DIR/libavformat.so"
+          unzip -p "$APK" lib/arm64-v8a/libavcodec.so > "$VERIFY_DIR/libavcodec.so"
+          unzip -p "$APK" lib/arm64-v8a/libffmpeg.so > "$VERIFY_DIR/libffmpeg.so"
+
+          test -s "$VERIFY_DIR/libavformat.so"
+          test -s "$VERIFY_DIR/libavcodec.so"
+          test -s "$VERIFY_DIR/libffmpeg.so"
+          strings "$VERIFY_DIR/libavformat.so" | grep -q -- '--enable-gnutls'
+          strings "$VERIFY_DIR/libavcodec.so" | grep -q -- '--enable-mediacodec'
+
+          cp "$APK" out/Kirazium-DreamDisplays-FFmpeg-arm64.apk
+          sha256sum out/Kirazium-DreamDisplays-FFmpeg-arm64.apk \
+            > out/Kirazium-DreamDisplays-FFmpeg-arm64.apk.sha256
+
+      - name: Upload test APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Kirazium-DreamDisplays-FFmpeg-arm64
+          path: out/*
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Preserve native build log on failure
+        if: failure()
+        run: |
+          mkdir -p diagnostics
+          cp "$RUNNER_TEMP/FFmpegPlugin/ffmpeg-kit/build.log" diagnostics/ffmpeg-build.log || true
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Kirazium-DreamDisplays-FFmpeg-diagnostics
+          path: diagnostics/*
+          if-no-files-found: ignore
+          retention-days: 7
