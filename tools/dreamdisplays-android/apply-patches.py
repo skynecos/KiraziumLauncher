@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 from pathlib import Path
-import json
-
 ROOT = Path(__file__).resolve().parents[3] if "tools" in Path(__file__).parts else Path.cwd()
 
 def replace(path, old, new):
@@ -141,10 +139,10 @@ for old in ("version=1.9.5-dev", "version=1.9.5", "version=1.10.0-dev"):
         break
 gp.write_text(g)
 
-# Select the user's current Minecraft version.
-vp = ROOT / "versions.json"
-data = json.loads(vp.read_text())
-data["active"] = "26.1.2"
-vp.write_text(json.dumps(data, indent=2) + "\n")
+# Dream Displays 1.9.5 uses Stonecutter's versions/active.txt (versions.json is a later layout).
+active = ROOT / "versions" / "active.txt"
+if not active.is_file():
+    raise SystemExit("Dream Displays 1.9.5 Stonecutter layout not found: versions/active.txt")
+active.write_text("26.1.2\n")
 
-print("Applied Kirazium Android compatibility patches.")
+print("Applied Kirazium Android compatibility patches for Dream Displays 1.9.5 / MC 26.1.2.")
