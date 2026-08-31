@@ -49,8 +49,18 @@ jobs:
             exit 1
           fi
 
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager \
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -perm -u+x | head -n 1 || true)"
+          fi
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager was not found under $SDK_ROOT/cmdline-tools."
+            find "$SDK_ROOT" -maxdepth 4 -type f -name sdkmanager -print || true
+            exit 1
+          fi
+
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" \
             "ndk;${ANDROID_NDK_VERSION}" \
             "platforms;android-36" \
             "build-tools;36.0.0"
