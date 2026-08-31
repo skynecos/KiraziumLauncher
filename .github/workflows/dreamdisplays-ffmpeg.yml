@@ -38,7 +38,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             autogen autoconf automake autopoint build-essential cmake gettext \
-            gperf groff gtk-doc-tools libtool libtool-bin nasm pkg-config yasm
+            gperf groff gtk-doc-tools libtasn1-bin libtool libtool-bin nasm pkg-config yasm
 
       - name: Install pinned Android NDK
         run: |
