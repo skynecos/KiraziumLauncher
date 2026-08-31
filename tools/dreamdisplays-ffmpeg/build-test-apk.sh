@@ -24,13 +24,19 @@ cd "${ffmpeg_kit_dir}"
 
 # Dream Displays receives YouTube and CDN stream URLs over HTTPS. The stock
 # helper has no TLS backend, so FFmpeg exits before it can emit its first frame.
-# GnuTLS supplies HTTPS; zlib handles compressed manifests/responses. MediaCodec
-# is included now so the next client-mod phase can select Android hardware decode.
+# GnuTLS supplies HTTPS; zlib handles compressed manifests/responses.
+#
+# Do NOT enable Android MediaCodec in the standalone FFmpeg executable build.
+# FFmpeg's MediaCodec decoder requires a registered JavaVM/native window when
+# used from Android JNI. Dream Displays currently launches FFmpeg as a child
+# executable, so h264_mediacodec fails before the first frame with
+# "No Java virtual machine has been registered". Keep the CLI helper on the
+# software decoder path for reliable playback. Hardware MediaCodec will be
+# integrated separately through an in-process/JNI path rather than the CLI.
 ./android.sh \
   --api-level=24 \
   --speed \
   --enable-gnutls \
-  --enable-android-media-codec \
   --enable-android-zlib \
   --disable-arm-v7a \
   --disable-arm-v7a-neon \
@@ -54,8 +60,8 @@ rm -f libraries.jar
 zip -q -r libraries.jar lib/
 
 cd "${plugin_dir}"
-sed -i 's/versionCode 3/versionCode 4/' app/build.gradle
-sed -i 's/versionName "1.2"/versionName "1.3-kirazium-dd"/' app/build.gradle
+sed -i 's/versionCode 3/versionCode 5/' app/build.gradle
+sed -i 's/versionName "1.2"/versionName "1.4-kirazium-dd-swdecode"/' app/build.gradle
 sed -i 's/MojoLauncher FFmpeg Plugin/Kirazium Dream Displays FFmpeg/' \
   app/src/main/res/values/strings.xml
 
