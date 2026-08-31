@@ -59,6 +59,7 @@ jobs:
           grep -q "POJAV_FFMPEG_PATH" media/player/src/main/kotlin/com/dreamdisplays/media/player/process/FFmpegBinary.kt
           grep -q "androidCompat" platform/client/common/src/main/kotlin/com/dreamdisplays/platform/client/render/AsyncTextureUploader.kt
           grep -q "LD_LIBRARY_PATH" media/player/src/main/kotlin/com/dreamdisplays/media/player/process/FFmpegBinary.kt
+          grep -q "POJAV_FFMPEG_PATH" platform/client/common/src/main/kotlin/com/dreamdisplays/platform/client/render/RenderBackendCompat.kt
           grep -q "FFmpegBinary.processBuilder" media/player/src/main/kotlin/com/dreamdisplays/media/player/process/MediaProcess.kt
 
       - name: Build Fabric 26.1.2 mod
@@ -72,10 +73,10 @@ jobs:
           set -euo pipefail
           SRC="$RUNNER_TEMP/dreamdisplays"
           mkdir -p out
-          JAR="$SRC/build/libs/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android2.jar"
+          JAR="$SRC/build/libs/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android3.jar"
           test -s "$JAR"
-          cp "$JAR" out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android2.jar
-          sha256sum out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android2.jar > out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android2.jar.sha256
+          cp "$JAR" out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android3.jar
+          sha256sum out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android3.jar > out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android3.jar.sha256
 
       - name: Upload Android-patched Dream Displays
         uses: actions/upload-artifact@v4
