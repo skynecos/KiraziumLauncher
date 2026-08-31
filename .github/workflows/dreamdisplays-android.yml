@@ -40,6 +40,7 @@ jobs:
           git -C "$SRC" checkout --detach FETCH_HEAD
           cp tools/dreamdisplays-android/apply-patches.py "$SRC/apply-kirazium-android-patches.py"
           cp tools/dreamdisplays-android/apply-android4.py "$SRC/apply-kirazium-android4.py"
+          cp tools/dreamdisplays-android/apply-android5.py "$SRC/apply-kirazium-android5.py"
 
       - name: Apply Android compatibility patches
         run: |
@@ -47,9 +48,10 @@ jobs:
           cd "$RUNNER_TEMP/dreamdisplays"
           python3 ./apply-kirazium-android-patches.py
           python3 ./apply-kirazium-android4.py
+          python3 ./apply-kirazium-android5.py
           chmod +x ./gradlew
 
-      - name: Preflight Dream Displays Android4 patches
+      - name: Preflight Dream Displays Android5 patches
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/dreamdisplays"
@@ -63,12 +65,16 @@ jobs:
           grep -q "LD_LIBRARY_PATH" media/player/src/main/kotlin/com/dreamdisplays/media/player/process/FFmpegBinary.kt
           grep -q "FFmpegBinary.processBuilder" media/player/src/main/kotlin/com/dreamdisplays/media/player/process/MediaProcess.kt
           grep -q 'MEDIACODEC("mediacodec"' media/player/src/main/kotlin/com/dreamdisplays/media/player/process/HwAccelBackend.kt
+          grep -Fq 'System.getenv("POJAV_FFMPEG_PATH")?.isNotBlank() == true -> NONE' media/player/src/main/kotlin/com/dreamdisplays/media/player/process/HwAccelBackend.kt
           grep -q "AndroidOpenALLine" media/player/src/main/kotlin/com/dreamdisplays/media/player/pipeline/AudioSink.kt
+          grep -q "EXTThreadLocalContext" media/player/src/main/kotlin/com/dreamdisplays/media/player/pipeline/AndroidOpenALLine.kt
+          grep -q "alcSetThreadContext" media/player/src/main/kotlin/com/dreamdisplays/media/player/pipeline/AndroidOpenALLine.kt
+          grep -q "thread-local context" media/player/src/main/kotlin/com/dreamdisplays/media/player/pipeline/AudioSink.kt
           grep -q "lwjgl-openal:3.4.1" media/player/build.gradle.kts
           grep -q "POJAV_FFMPEG_PATH" platform/client/common/src/main/kotlin/com/dreamdisplays/platform/client/render/RenderBackendCompat.kt
-          grep -q "version=1.9.5-kirazium-android4" gradle.properties
+          grep -q "version=1.9.5-kirazium-android5" gradle.properties
 
-      - name: Build Fabric 26.1.2 Android4 mod
+      - name: Build Fabric 26.1.2 Android5 mod
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/dreamdisplays"
@@ -82,14 +88,14 @@ jobs:
           set -euo pipefail
           SRC="$RUNNER_TEMP/dreamdisplays"
           mkdir -p out
-          JAR="$SRC/build/libs/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android4.jar"
+          JAR="$SRC/build/libs/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android5.jar"
           if [[ ! -s "$JAR" ]]; then
-            echo "Expected Android4 JAR not found. Available build outputs:"
+            echo "Expected Android5 JAR not found. Available build outputs:"
             find "$SRC/build/libs" -maxdepth 1 -type f -name '*.jar' -print || true
             exit 1
           fi
-          cp "$JAR" out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android4.jar
-          sha256sum out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android4.jar > out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android4.jar.sha256
+          cp "$JAR" out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android5.jar
+          sha256sum out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android5.jar > out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android5.jar.sha256
 
       - name: Upload Android-patched Dream Displays
         uses: actions/upload-artifact@v4
