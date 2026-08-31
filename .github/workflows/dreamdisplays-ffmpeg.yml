@@ -111,7 +111,15 @@ jobs:
           test -s "$VERIFY_DIR/libffmpeg.so"
           readelf -d "$VERIFY_DIR/libffmpeg.so" | grep -q 'libavdevice.so'
           strings "$VERIFY_DIR/libavformat.so" | grep -q -- '--enable-gnutls'
-          strings "$VERIFY_DIR/libavcodec.so" | grep -q -- '--enable-mediacodec'
+
+          # The standalone helper must NOT expose MediaCodec. Android4's direct
+          # FFmpeg child process has no registered JavaVM/native window, which is
+          # what caused the first-frame restart loop on-device. Hardware decoding
+          # will be reintroduced later through an in-process/JNI path.
+          if strings "$VERIFY_DIR/libavcodec.so" | grep -q -- '--enable-mediacodec'; then
+            echo "::error::Standalone FFmpeg helper unexpectedly has MediaCodec enabled."
+            exit 1
+          fi
 
           cp "$APK" out/Kirazium-DreamDisplays-FFmpeg-arm64.apk
           sha256sum out/Kirazium-DreamDisplays-FFmpeg-arm64.apk \
