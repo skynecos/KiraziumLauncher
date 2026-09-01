@@ -87,7 +87,7 @@ jobs:
           git -C "$PLUGIN_DIR/ffmpeg-kit" checkout --detach FETCH_HEAD
           git -C "$PLUGIN_DIR/ffmpeg-kit" apply "$PLUGIN_DIR/scripts/ffmpeg_enable_executable.diff"
 
-      - name: Build HTTPS-enabled helper APK
+      - name: Build MediaCodec-enabled helper APK
         run: |
           set -euo pipefail
           chmod +x tools/dreamdisplays-ffmpeg/build-test-apk.sh
@@ -111,24 +111,22 @@ jobs:
           test -s "$VERIFY_DIR/libffmpeg.so"
           readelf -d "$VERIFY_DIR/libffmpeg.so" | grep -q 'libavdevice.so'
           strings "$VERIFY_DIR/libavformat.so" | grep -q -- '--enable-gnutls'
+          strings "$VERIFY_DIR/libavcodec.so" | grep -q -- '--enable-mediacodec'
+          strings "$VERIFY_DIR/libavcodec.so" | grep -q -- '--enable-jni'
+          readelf -Ws "$VERIFY_DIR/libavcodec.so" | grep -q 'av_jni_set_java_vm'
 
-          # The standalone helper must NOT expose MediaCodec. Android4's direct
-          # FFmpeg child process has no registered JavaVM/native window, which is
-          # what caused the first-frame restart loop on-device. Hardware decoding
-          # will be reintroduced later through an in-process/JNI path.
-          if strings "$VERIFY_DIR/libavcodec.so" | grep -q -- '--enable-mediacodec'; then
-            echo "::error::Standalone FFmpeg helper unexpectedly has MediaCodec enabled."
-            exit 1
-          fi
+          # Ensure the decoder wrappers we will request from libdreamdisplays_lav are present.
+          strings "$VERIFY_DIR/libavcodec.so" | grep -q 'h264_mediacodec'
+          strings "$VERIFY_DIR/libavcodec.so" | grep -q 'hevc_mediacodec'
 
-          cp "$APK" out/Kirazium-DreamDisplays-FFmpeg-arm64.apk
-          sha256sum out/Kirazium-DreamDisplays-FFmpeg-arm64.apk \
-            > out/Kirazium-DreamDisplays-FFmpeg-arm64.apk.sha256
+          cp "$APK" out/Kirazium-DreamDisplays-FFmpeg-MediaCodec-arm64.apk
+          sha256sum out/Kirazium-DreamDisplays-FFmpeg-MediaCodec-arm64.apk \
+            > out/Kirazium-DreamDisplays-FFmpeg-MediaCodec-arm64.apk.sha256
 
       - name: Upload test APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: Kirazium-DreamDisplays-FFmpeg-arm64
+          name: Kirazium-DreamDisplays-FFmpeg-MediaCodec-arm64
           path: out/*
           if-no-files-found: error
           retention-days: 7
