@@ -9,31 +9,21 @@ def replace(path: str, old: str, new: str, count: int = 1):
     s = p.read_text()
     found = s.count(old)
     if found < count:
-        raise SystemExit(
-            f"Patch anchor not found enough times in {path}: wanted {count}, found {found}: {old[:140]!r}"
-        )
+        raise SystemExit(f"Patch anchor not found in {path}: wanted {count}, found {found}: {old[:140]!r}")
     p.write_text(s.replace(old, new, count))
 
 
-# Android9 is the first build that moves the expensive video decode in-process and
-# asks Android's MediaCodec block to do it. The standalone FFmpeg helper remains a
-# software fallback: MediaCodec is only selected by dreamdisplays_lav, where the
-# library is loaded by the JVM and can register the real JavaVM with libavcodec.
-
-# 1) Give MediaCodec its own LAV ABI code and select it by default on Android.
+# Android9: MediaCodec is used ONLY by the JNI-loaded in-process LAV backend.
+# The external FFmpeg fallback intentionally stays software-only because a child
+# process has no registered JavaVM and MediaCodec fails there on Android.
 replace(
     "media/player/src/main/kotlin/com/dreamdisplays/media/player/process/HwAccelBackend.kt",
     '    MEDIACODEC("mediacodec", null, 0),\n',
     '    MEDIACODEC("mediacodec", null, 6),\n',
 )
-replace(
-    "media/player/src/main/kotlin/com/dreamdisplays/media/player/process/HwAccelBackend.kt",
-    '            System.getenv("POJAV_FFMPEG_PATH")?.isNotBlank() == true -> NONE\n',
-    '            System.getenv("POJAV_FFMPEG_PATH")?.isNotBlank() == true -> MEDIACODEC\n',
-)
 
-# 2) LAV's generic Linux "auto" mapping would otherwise try VAAPI/CUDA because
-# Android reports itself as Linux. Pin the Android in-process path to MediaCodec.
+# Android reports itself as Linux. Bypass generic VAAPI/CUDA auto probing and ask
+# LAV for MediaCodec even though the process-fallback HwAccelBackend remains NONE.
 replace(
     "media/player/src/main/kotlin/com/dreamdisplays/media/player/pipeline/NativeVideoFramePipe.kt",
     '''    private fun lavHwCode(hwAccel: HwAccelBackend): Int {
@@ -41,19 +31,16 @@ replace(
         val configured = System.getProperty("dreamdisplays.native.libav.hw")?.lowercase()
 ''',
     '''    private fun lavHwCode(hwAccel: HwAccelBackend): Int {
-        if (hwAccel == HwAccelBackend.NONE) return HwAccelBackend.NONE.lavCode
-        // Android is reported as Linux by the Java runtime, but VAAPI/CUDA are not its
-        // decoder APIs. The JNI-loaded LAV library owns the MediaCodec path instead.
         if (System.getenv("POJAV_FFMPEG_PATH")?.isNotBlank() == true) {
             return HwAccelBackend.MEDIACODEC.lavCode
         }
+        if (hwAccel == HwAccelBackend.NONE) return HwAccelBackend.NONE.lavCode
         val configured = System.getProperty("dreamdisplays.native.libav.hw")?.lowercase()
 ''',
 )
 
-# 3) On Android provision LAV's FFmpeg shared dependencies from the Kirazium
-# helper APK instead of downloading a glibc Linux BtbN bundle. Copying them into
-# the launcher's private cache also keeps Android's linker in one app namespace.
+# On Android, use the helper APK's Bionic FFmpeg libraries. Never download the
+# desktop/glibc BtbN bundle there.
 replace(
     "media/player/src/main/kotlin/com/dreamdisplays/media/player/nativebridge/LavFfmpeg.kt",
     '''    fun ensure(dir: File): Boolean {
@@ -73,7 +60,7 @@ replace(
     '''    /** True once at least the core decode library is present in [dir]. */
     private fun hasFfmpeg(dir: File): Boolean =
 ''',
-    '''    /** Copies the MediaCodec-enabled helper APK's native libraries into [dir]. */
+    '''    /** Copies the helper APK's shared dependencies into the launcher's private LAV cache. */
     private fun provisionAndroidHelperLibraries(dir: File): Boolean {
         val helperPath = System.getenv("POJAV_FFMPEG_PATH")?.takeIf { it.isNotBlank() } ?: return false
         val helper = File(helperPath)
@@ -91,13 +78,9 @@ replace(
             if (libraries.isEmpty()) throw IOException("No helper shared libraries are visible in $sourceDir.")
             var copied = 0
             for (source in libraries) {
-                // libffmpeg.so / libffprobe.so are executable entry points; LAV only needs
-                // shared dependencies. Leaving them out avoids copying tens of extra MiB.
                 if (source.name == "libffmpeg.so" || source.name == "libffprobe.so") continue
                 val target = File(dir, source.name)
-                if (!target.isFile || target.length() != source.length()) {
-                    source.copyTo(target, overwrite = true)
-                }
+                if (!target.isFile || target.length() != source.length()) source.copyTo(target, overwrite = true)
                 copied++
             }
             logger.info("Android in-process FFmpeg dependencies ready ($copied helper libraries copied).")
@@ -113,8 +96,8 @@ replace(
 ''',
 )
 
-# 4) System.load invokes JNI_OnLoad. Panama's SymbolLookup alone is a plain dlopen
-# and would not give libavcodec the JavaVM that FFmpeg 6 MediaCodec requires.
+# Panama libraryLookup is only dlopen. System.load is required on Android so
+# JNI_OnLoad receives the real JavaVM before any MediaCodec decoder is opened.
 replace(
     "media/player/src/main/kotlin/com/dreamdisplays/media/player/nativebridge/NativeMedia.kt",
     '''            LavFfmpeg.ensure(lib.parentFile)
@@ -122,19 +105,16 @@ replace(
             val lookup = SymbolLookup.libraryLookup(lib.toPath(), Arena.global())
 ''',
     '''            if (!LavFfmpeg.ensure(lib.parentFile)) {
-                throw UnsatisfiedLinkError("Android/desktop FFmpeg dependencies could not be provisioned")
+                throw UnsatisfiedLinkError("FFmpeg dependencies could not be provisioned")
             }
             preloadLavDependencies(lib.parentFile)
             if (System.getenv("POJAV_FFMPEG_PATH")?.isNotBlank() == true) {
-                // Required specifically on Android: invokes JNI_OnLoad in dreamdisplays_lav,
-                // which registers this process' real JavaVM with FFmpeg's MediaCodec bridge.
                 System.load(lib.absolutePath)
             }
             val lookup = SymbolLookup.libraryLookup(lib.toPath(), Arena.global())
 ''',
 )
 
-# 5) Register the JVM with FFmpeg when libdreamdisplays_lav is loaded through JNI.
 replace(
     "native/lav/src/lib.rs",
     '''use session::{ERR_BAD_ARGS, ERR_IO, LavSessions, NO_PTS_NANOS};
@@ -159,8 +139,6 @@ unsafe extern "C" {
     fn av_jni_set_java_vm(vm: *mut c_void, log_ctx: *mut c_void) -> i32;
 }
 
-/// JNI entry point used only by the Kirazium Android build. FFmpeg 6's Java
-/// MediaCodec wrapper refuses to initialize until the hosting JavaVM is registered.
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn JNI_OnLoad(vm: *mut c_void, _reserved: *mut c_void) -> i32 {
@@ -185,10 +163,9 @@ replace(
 ''',
 )
 
-# 6) Add a decoder-specific MediaCodec backend. MediaCodec is not a normal
-# AVHWDevice transfer path in FFmpeg 6: h264_mediacodec/hevc_mediacodec/etc.
-# are decoders themselves. With no Surface requested they return CPU-visible
-# YUV frames, which Dream Displays keeps planar and uploads to the existing GPU shader.
+# FFmpeg 6 exposes Android hardware decoding as codec implementations such as
+# h264_mediacodec rather than an AVHWDevice path. Select the matching decoder by
+# name and keep CPU-visible YUV output for the existing planar GPU upload path.
 replace(
     "native/lav/src/session.rs",
     '''    Vaapi,
@@ -217,7 +194,6 @@ replace(
             HwAccelRequest::Auto => auto_hw_candidates(),
 ''',
     '''            HwAccelRequest::Cuda => &[HW_CUDA],
-            // MediaCodec is selected by decoder name, not AVHWDeviceType.
             HwAccelRequest::MediaCodec => &[],
             HwAccelRequest::Auto => auto_hw_candidates(),
 ''',
@@ -273,25 +249,13 @@ fn open_android_mediacodec_decoder(
     parameters: &codec::Parameters,
     packet_time_base: ffmpeg::Rational,
 ) -> Result<Option<codec::decoder::Video>> {
-    // Try every MediaCodec decoder name we ship and select the one whose AVCodecID
-    // matches the input. This avoids hard-coding ffmpeg-next enum spellings and makes
-    // unsupported codecs fall back cleanly.
     const NAMES: [&str; 7] = [
-        "h264_mediacodec",
-        "hevc_mediacodec",
-        "vp9_mediacodec",
-        "vp8_mediacodec",
-        "av1_mediacodec",
-        "mpeg4_mediacodec",
-        "mpeg2_mediacodec",
+        "h264_mediacodec", "hevc_mediacodec", "vp9_mediacodec", "vp8_mediacodec",
+        "av1_mediacodec", "mpeg4_mediacodec", "mpeg2_mediacodec",
     ];
     for name in NAMES {
-        let Some(candidate) = codec::decoder::find_by_name(name) else {
-            continue;
-        };
-        if candidate.id() != parameters.id() {
-            continue;
-        }
+        let Some(candidate) = codec::decoder::find_by_name(name) else { continue; };
+        if candidate.id() != parameters.id() { continue; }
         let context = new_decoder_context(parameters)?;
         let mut decoder = context.decoder();
         decoder.set_packet_time_base(packet_time_base);
@@ -315,7 +279,6 @@ fn new_decoder_context(
 ''',
 )
 
-# Version marker.
 gp = ROOT / "gradle.properties"
 g = gp.read_text()
 if "version=1.9.5-kirazium-android8" not in g:
