@@ -176,7 +176,8 @@ jobs:
           test -s native/build/ci-bundle/dreamdisplays-natives/linux-aarch64/libdreamdisplays_native.so
           test -s native/build/ci-bundle/dreamdisplays-natives/linux-aarch64/libdreamdisplays_lav.so
           grep -Fq 'MEDIACODEC("mediacodec", null, 6)' media/player/src/main/kotlin/com/dreamdisplays/media/player/process/HwAccelBackend.kt
-          grep -Fq 'System.getenv("POJAV_FFMPEG_PATH")?.isNotBlank() == true -> MEDIACODEC' media/player/src/main/kotlin/com/dreamdisplays/media/player/process/HwAccelBackend.kt
+          grep -Fq 'System.getenv("POJAV_FFMPEG_PATH")?.isNotBlank() == true -> NONE' media/player/src/main/kotlin/com/dreamdisplays/media/player/process/HwAccelBackend.kt
+          grep -q 'return HwAccelBackend.MEDIACODEC.lavCode' media/player/src/main/kotlin/com/dreamdisplays/media/player/pipeline/NativeVideoFramePipe.kt
           grep -q 'provisionAndroidHelperLibraries' media/player/src/main/kotlin/com/dreamdisplays/media/player/nativebridge/LavFfmpeg.kt
           grep -q 'System.load(lib.absolutePath)' media/player/src/main/kotlin/com/dreamdisplays/media/player/nativebridge/NativeMedia.kt
           grep -q 'JNI_OnLoad' native/lav/src/lib.rs
