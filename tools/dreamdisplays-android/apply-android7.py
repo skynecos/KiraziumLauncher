@@ -33,7 +33,7 @@ replace(
     '''    /**
      * Android's linker only accepts a library from the app's private storage. Kirazium
      * Launcher exposes such a directory through MOD_ANDROID_RUNTIME; desktop keeps the
-     * portable game directory cache used by upstream Dream Displays.
+     * portable game-directory cache used by upstream Dream Displays.
      */
     private fun cacheRoot(): File {
         val androidRuntime = System.getenv("MOD_ANDROID_RUNTIME")?.takeIf { it.isNotBlank() }
@@ -59,13 +59,13 @@ replace(
 ''',
     '''        let mut cmd = Command::new(&args[0]);
         // The Android helper is an executable shared object plus sibling libav*.so
-        // files. Java-launched FFmpeg gets this directory, through the launcher's
+        // files. Java-launched FFmpeg gets this directory through the launcher's
         // ProcessBuilder hook; the native pipe starts it directly, so mirror that
         // environment here before exec().
         if std::env::var_os("POJAV_FFMPEG_PATH").is_some() {
             if let Some(dir) = std::path::Path::new(&args[0]).parent() {
                 let inherited = std::env::var_os("LD_LIBRARY_PATH")
-                    .map(|value| std::env::split_paths(&value).collect::<Vec_>())
+                    .map(|value| std::env::split_paths(&value).collect::<Vec<_>>())
                     .unwrap_or_default();
                 let mut paths = Vec::with_capacity(inherited.len() + 1);
                 paths.push(dir.to_path_buf());
