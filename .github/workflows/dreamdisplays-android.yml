@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/dreamdisplays-android.yml"
       - "tools/dreamdisplays-android/**"
+      - "tools/dreamdisplays-ffmpeg/**"
   workflow_dispatch:
 
 permissions:
@@ -14,17 +15,87 @@ permissions:
 
 env:
   DREAMDISPLAYS_UPSTREAM_COMMIT: "bb5e1457bd4717561d367b329440e507878748e1"
+  FFMPEG_PLUGIN_COMMIT: "5422b575f2402810ba9bfdc07c3f78bab98a15a2"
+  FFMPEG_KIT_COMMIT: "97760a31349439243487a99adbcde09e9dabe458"
   ANDROID_NDK_VERSION: "25.1.8937393"
 
 jobs:
   build-fabric-26-1-2:
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 300
     steps:
       - name: Checkout Kirazium patch files
         uses: actions/checkout@v4
 
-      - name: Set up JDK 25
+      - name: Set up JDK 17 for helper APK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Install Android/native build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            autogen autoconf automake autopoint build-essential clang cmake gettext \
+            gperf groff gtk-doc-tools libclang-dev libtasn1-bin libtool libtool-bin \
+            nasm pkg-config yasm
+
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$SDK_ROOT" ]; then
+            echo "::error::Android SDK is unavailable on the runner."
+            exit 1
+          fi
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -perm -u+x | head -n 1 || true)"
+          fi
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager was not found under $SDK_ROOT/cmdline-tools."
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" \
+            "ndk;${ANDROID_NDK_VERSION}" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$SDK_ROOT/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Fetch pinned MediaCodec FFmpeg helper sources
+        run: |
+          set -euo pipefail
+          PLUGIN_DIR="$RUNNER_TEMP/FFmpegPlugin"
+          git init "$PLUGIN_DIR"
+          git -C "$PLUGIN_DIR" remote add origin https://github.com/MojoLauncher/FFmpegPlugin.git
+          git -C "$PLUGIN_DIR" fetch --depth 1 origin "$FFMPEG_PLUGIN_COMMIT"
+          git -C "$PLUGIN_DIR" checkout --detach FETCH_HEAD
+
+          git init "$PLUGIN_DIR/ffmpeg-kit"
+          git -C "$PLUGIN_DIR/ffmpeg-kit" remote add origin https://github.com/arthenica/ffmpeg-kit.git
+          git -C "$PLUGIN_DIR/ffmpeg-kit" fetch --depth 1 origin "$FFMPEG_KIT_COMMIT"
+          git -C "$PLUGIN_DIR/ffmpeg-kit" checkout --detach FETCH_HEAD
+          git -C "$PLUGIN_DIR/ffmpeg-kit" apply "$PLUGIN_DIR/scripts/ffmpeg_enable_executable.diff"
+
+      - name: Build MediaCodec FFmpeg helper APK and shared libraries
+        run: |
+          set -euo pipefail
+          chmod +x tools/dreamdisplays-ffmpeg/build-test-apk.sh
+          tools/dreamdisplays-ffmpeg/build-test-apk.sh "$RUNNER_TEMP/FFmpegPlugin"
+
+          FFROOT="$RUNNER_TEMP/FFmpegPlugin/ffmpeg-kit/prebuilt/android-arm64/ffmpeg"
+          test -s "$FFROOT/lib/libavcodec.so"
+          test -s "$FFROOT/lib/libavformat.so"
+          test -d "$FFROOT/include"
+          strings "$FFROOT/lib/libavcodec.so" | grep -q -- '--enable-mediacodec'
+          strings "$FFROOT/lib/libavcodec.so" | grep -q -- '--enable-jni'
+          readelf -Ws "$FFROOT/lib/libavcodec.so" | grep -q 'av_jni_set_java_vm'
+          strings "$FFROOT/lib/libavcodec.so" | grep -q 'h264_mediacodec'
+          strings "$FFROOT/lib/libavcodec.so" | grep -q 'hevc_mediacodec'
+
+      - name: Set up JDK 25 for Dream Displays
         uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -39,93 +110,81 @@ jobs:
           git -C "$SRC" remote add origin https://github.com/arnodoelinger/dreamdisplays.git
           git -C "$SRC" fetch --depth 1 origin "$DREAMDISPLAYS_UPSTREAM_COMMIT"
           git -C "$SRC" checkout --detach FETCH_HEAD
-          cp tools/dreamdisplays-android/apply-patches.py "$SRC/apply-kirazium-android-patches.py"
-          cp tools/dreamdisplays-android/apply-android4.py "$SRC/apply-kirazium-android4.py"
-          cp tools/dreamdisplays-android/apply-android5.py "$SRC/apply-kirazium-android5.py"
-          cp tools/dreamdisplays-android/apply-android6.py "$SRC/apply-kirazium-android6.py"
-          cp tools/dreamdisplays-android/apply-android7.py "$SRC/apply-kirazium-android7.py"
-          cp tools/dreamdisplays-android/apply-android8.py "$SRC/apply-kirazium-android8.py"
+          for patch in apply-patches.py apply-android4.py apply-android5.py apply-android6.py apply-android7.py apply-android8.py apply-android9.py; do
+            cp "tools/dreamdisplays-android/$patch" "$SRC/$patch"
+          done
 
-      - name: Apply Android compatibility patches
+      - name: Apply Android9 compatibility patches
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/dreamdisplays"
-          python3 ./apply-kirazium-android-patches.py
-          python3 ./apply-kirazium-android4.py
-          python3 ./apply-kirazium-android5.py
-          python3 ./apply-kirazium-android6.py
-          python3 ./apply-kirazium-android7.py
-          python3 ./apply-kirazium-android8.py
+          python3 ./apply-patches.py
+          python3 ./apply-android4.py
+          python3 ./apply-android5.py
+          python3 ./apply-android6.py
+          python3 ./apply-android7.py
+          python3 ./apply-android8.py
+          python3 ./apply-android9.py
 
-      - name: Build Android ARM64 native frame pipe
+      - name: Build Android ARM64 native and in-process MediaCodec LAV
         run: |
           set -euo pipefail
-          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
-          if [ -z "$SDK_ROOT" ]; then
-            echo "::error::Android SDK is unavailable on the runner."
-            exit 1
-          fi
-
-          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [ ! -x "$SDKMANAGER" ]; then
-            SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -perm -u+x | head -n 1 || true)"
-          fi
-          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
-            echo "::error::sdkmanager was not found under $SDK_ROOT/cmdline-tools."
-            exit 1
-          fi
-
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "ndk;${ANDROID_NDK_VERSION}"
-
-          NDK_ROOT="$SDK_ROOT/ndk/${ANDROID_NDK_VERSION}"
+          NDK_ROOT="$ANDROID_NDK_ROOT"
           TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          test -x "$TOOLCHAIN/aarch64-linux-android21-clang"
-          command -v rustup
+          SYSROOT="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+          test -x "$TOOLCHAIN/aarch64-linux-android24-clang"
+
           rustup toolchain install stable --profile minimal
           rustup default stable
           rustup target add aarch64-linux-android
 
-          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android21-clang"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android24-clang"
+          export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android24-clang"
+          export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android24-clang++"
+          export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
+
           SRC="$RUNNER_TEMP/dreamdisplays"
+          FFROOT="$RUNNER_TEMP/FFmpegPlugin/ffmpeg-kit/prebuilt/android-arm64/ffmpeg"
+          export FFMPEG_DIR="$FFROOT"
+          export PKG_CONFIG_ALLOW_CROSS=1
+          export PKG_CONFIG_PATH="$FFROOT/lib/pkgconfig"
+          export BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-linux-android24 --sysroot=$SYSROOT -I$FFROOT/include"
+          export LIBCLANG_PATH="$(dirname "$(find /usr/lib/llvm-* -name libclang.so -o -name 'libclang.so.*' | head -n 1)")"
+
           cd "$SRC/native"
           cargo build --locked --release --target aarch64-linux-android -p dreamdisplays-native
+          cargo build --locked --release --target aarch64-linux-android -p dreamdisplays-lav
 
           BUNDLE="$SRC/native/build/ci-bundle/dreamdisplays-natives/linux-aarch64"
           mkdir -p "$BUNDLE"
           cp target/aarch64-linux-android/release/libdreamdisplays_native.so "$BUNDLE/libdreamdisplays_native.so"
+          cp target/aarch64-linux-android/release/libdreamdisplays_lav.so "$BUNDLE/libdreamdisplays_lav.so"
+
           test -s "$BUNDLE/libdreamdisplays_native.so"
-          "$TOOLCHAIN/llvm-readelf" -h "$BUNDLE/libdreamdisplays_native.so" | grep -q 'AArch64'
+          test -s "$BUNDLE/libdreamdisplays_lav.so"
+          "$TOOLCHAIN/llvm-readelf" -h "$BUNDLE/libdreamdisplays_lav.so" | grep -q 'AArch64'
+          "$TOOLCHAIN/llvm-readelf" -Ws "$BUNDLE/libdreamdisplays_lav.so" | grep -q 'JNI_OnLoad'
+          "$TOOLCHAIN/llvm-readelf" -d "$BUNDLE/libdreamdisplays_lav.so" | grep -q 'libavcodec.so'
+          "$TOOLCHAIN/llvm-readelf" -d "$BUNDLE/libdreamdisplays_lav.so" | grep -q 'libavformat.so'
           chmod +x "$SRC/gradlew"
 
-      - name: Preflight Dream Displays Android8 patches
+      - name: Preflight Dream Displays Android9 patches
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/dreamdisplays"
           test "$(cat versions/active.txt)" = "26.1.2"
-          test -f versions/26.1.2/gradle.properties
-          test -f media/player/src/main/kotlin/com/dreamdisplays/media/player/process/FFmpegBinary.kt
-          test -f media/player/src/main/kotlin/com/dreamdisplays/media/player/process/HwAccelBackend.kt
-          test -f media/player/src/main/kotlin/com/dreamdisplays/media/player/pipeline/AndroidOpenALLine.kt
-          test -f platform/client/common/src/main/kotlin/com/dreamdisplays/platform/client/render/AsyncTextureUploader.kt
           test -s native/build/ci-bundle/dreamdisplays-natives/linux-aarch64/libdreamdisplays_native.so
-          grep -q "POJAV_FFMPEG_PATH" media/player/src/main/kotlin/com/dreamdisplays/media/player/process/FFmpegBinary.kt
-          grep -q "LD_LIBRARY_PATH" media/player/src/main/kotlin/com/dreamdisplays/media/player/process/FFmpegBinary.kt
-          grep -q "FFmpegBinary.processBuilder" media/player/src/main/kotlin/com/dreamdisplays/media/player/process/MediaProcess.kt
-          grep -q 'MEDIACODEC("mediacodec"' media/player/src/main/kotlin/com/dreamdisplays/media/player/process/HwAccelBackend.kt
-          grep -Fq 'System.getenv("POJAV_FFMPEG_PATH")?.isNotBlank() == true -> NONE' media/player/src/main/kotlin/com/dreamdisplays/media/player/process/HwAccelBackend.kt
-          grep -q "AndroidOpenALLine" media/player/src/main/kotlin/com/dreamdisplays/media/player/pipeline/AudioSink.kt
-          grep -q "EXTThreadLocalContext" media/player/src/main/kotlin/com/dreamdisplays/media/player/pipeline/AndroidOpenALLine.kt
-          grep -q "alcSetThreadContext" media/player/src/main/kotlin/com/dreamdisplays/media/player/pipeline/AndroidOpenALLine.kt
-          grep -q "reclaimProcessed()" media/player/src/main/kotlin/com/dreamdisplays/media/player/pipeline/AndroidOpenALLine.kt
-          grep -q "thread-local context" media/player/src/main/kotlin/com/dreamdisplays/media/player/pipeline/AudioSink.kt
-          grep -q "lwjgl-openal:3.4.1" media/player/build.gradle.kts
-          grep -q "POJAV_FFMPEG_PATH" platform/client/common/src/main/kotlin/com/dreamdisplays/platform/client/render/RenderBackendCompat.kt
-          grep -q "MOD_ANDROID_RUNTIME" media/player/src/main/kotlin/com/dreamdisplays/media/player/nativebridge/NativeMedia.kt
-          grep -q "Using Android FFmpeg library directory" native/src/session.rs
-          grep -q "version=1.9.5-kirazium-android8" gradle.properties
+          test -s native/build/ci-bundle/dreamdisplays-natives/linux-aarch64/libdreamdisplays_lav.so
+          grep -Fq 'MEDIACODEC("mediacodec", null, 6)' media/player/src/main/kotlin/com/dreamdisplays/media/player/process/HwAccelBackend.kt
+          grep -Fq 'System.getenv("POJAV_FFMPEG_PATH")?.isNotBlank() == true -> MEDIACODEC' media/player/src/main/kotlin/com/dreamdisplays/media/player/process/HwAccelBackend.kt
+          grep -q 'provisionAndroidHelperLibraries' media/player/src/main/kotlin/com/dreamdisplays/media/player/nativebridge/LavFfmpeg.kt
+          grep -q 'System.load(lib.absolutePath)' media/player/src/main/kotlin/com/dreamdisplays/media/player/nativebridge/NativeMedia.kt
+          grep -q 'JNI_OnLoad' native/lav/src/lib.rs
+          grep -q 'h264_mediacodec' native/lav/src/session.rs
+          grep -q 'HwAccelRequest::MediaCodec' native/lav/src/session.rs
+          grep -q 'version=1.9.5-kirazium-android9' gradle.properties
 
-      - name: Build Fabric 26.1.2 Android8 mod
+      - name: Build Fabric 26.1.2 Android9 mod
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/dreamdisplays"
@@ -134,25 +193,48 @@ jobs:
             --no-daemon \
             --stacktrace
 
-      - name: Collect patched mod
+      - name: Collect and verify Android9 bundle
         run: |
           set -euo pipefail
           SRC="$RUNNER_TEMP/dreamdisplays"
-          mkdir -p out
-          JAR="$SRC/build/libs/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android8.jar"
+          JAR="$SRC/build/libs/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android9.jar"
+          APK="$RUNNER_TEMP/FFmpegPlugin/app/build/outputs/apk/debug/app-debug.apk"
+          mkdir -p out verify-jar
           if [[ ! -s "$JAR" ]]; then
-            echo "Expected Android8 JAR not found. Available build outputs:"
+            echo "Expected Android9 JAR not found. Available build outputs:"
             find "$SRC/build/libs" -maxdepth 1 -type f -name '*.jar' -print || true
             exit 1
           fi
+          test -s "$APK"
           jar tf "$JAR" | grep -q 'dreamdisplays-natives/linux-aarch64/libdreamdisplays_native.so'
-          cp "$JAR" out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android8.jar
-          sha256sum out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android8.jar > out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android8.jar.sha256
+          jar tf "$JAR" | grep -q 'dreamdisplays-natives/linux-aarch64/libdreamdisplays_lav.so'
+          unzip -p "$JAR" dreamdisplays-natives/linux-aarch64/libdreamdisplays_lav.so > verify-jar/libdreamdisplays_lav.so
+          readelf -Ws verify-jar/libdreamdisplays_lav.so | grep -q 'JNI_OnLoad'
+          readelf -d verify-jar/libdreamdisplays_lav.so | grep -q 'libavcodec.so'
 
-      - name: Upload Android-patched Dream Displays
+          unzip -p "$APK" lib/arm64-v8a/libavcodec.so > verify-jar/libavcodec.so
+          strings verify-jar/libavcodec.so | grep -q -- '--enable-mediacodec'
+          readelf -Ws verify-jar/libavcodec.so | grep -q 'av_jni_set_java_vm'
+
+          cp "$JAR" out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android9.jar
+          cp "$APK" out/Kirazium-DreamDisplays-FFmpeg-MediaCodec-arm64.apk
+          sha256sum out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android9.jar > out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android9.jar.sha256
+          sha256sum out/Kirazium-DreamDisplays-FFmpeg-MediaCodec-arm64.apk > out/Kirazium-DreamDisplays-FFmpeg-MediaCodec-arm64.apk.sha256
+
+      - name: Upload Android9 Dream Displays bundle
         uses: actions/upload-artifact@v4
         with:
-          name: Kirazium-DreamDisplays-Android-26.1.2
+          name: Kirazium-DreamDisplays-Android9-26.1.2
           path: out/*
           if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kirazium-DreamDisplays-Android9-diagnostics
+          path: |
+            ${{ runner.temp }}/FFmpegPlugin/ffmpeg-kit/build.log
+          if-no-files-found: ignore
           retention-days: 7
