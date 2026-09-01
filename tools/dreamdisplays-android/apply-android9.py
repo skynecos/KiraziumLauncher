@@ -164,8 +164,7 @@ replace(
 )
 
 # FFmpeg 6 exposes Android hardware decoding as codec implementations such as
-# h264_mediacodec rather than an AVHWDevice path. Select the matching decoder by
-# name and keep CPU-visible YUV output for the existing planar GPU upload path.
+# h264_mediacodec rather than an AVHWDevice path.
 replace(
     "native/lav/src/session.rs",
     '''    Vaapi,
@@ -277,6 +276,15 @@ fn new_decoder_context(
     parameters: &codec::Parameters,
 ) -> Result<codec::context::Context, ffmpeg::Error> {
 ''',
+)
+
+# Android bindgen for the pinned FFmpeg 6 build does not expose SwsFlags under
+# ffi. Use ffmpeg-next's public bitflag wrapper instead; this is the same
+# SWS_BILINEAR flag and does not alter scaling quality or output dimensions.
+replace(
+    "native/lav/src/scale.rs",
+    "const SCALE_FLAGS: c_int = ffi::SwsFlags::SWS_BILINEAR as c_int;",
+    "const SCALE_FLAGS: c_int = ffmpeg::software::scaling::Flags::BILINEAR.bits();",
 )
 
 gp = ROOT / "gradle.properties"
