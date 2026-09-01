@@ -22,22 +22,19 @@ fi
 
 cd "${ffmpeg_kit_dir}"
 
-# Dream Displays receives YouTube and CDN stream URLs over HTTPS. The stock
-# helper has no TLS backend, so FFmpeg exits before it can emit its first frame.
-# GnuTLS supplies HTTPS; zlib handles compressed manifests/responses.
+# Dream Displays receives YouTube and CDN stream URLs over HTTPS. GnuTLS supplies
+# HTTPS; zlib handles compressed manifests/responses.
 #
-# Do NOT enable Android MediaCodec in the standalone FFmpeg executable build.
-# FFmpeg's MediaCodec decoder requires a registered JavaVM/native window when
-# used from Android JNI. Dream Displays currently launches FFmpeg as a child
-# executable, so h264_mediacodec fails before the first frame with
-# "No Java virtual machine has been registered". Keep the CLI helper on the
-# software decoder path for reliable playback. Hardware MediaCodec will be
-# integrated separately through an in-process/JNI path rather than the CLI.
+# Android9 also compiles MediaCodec/JNI into libavcodec. The standalone libffmpeg.so
+# remains a SOFTWARE fallback because Dream Displays never passes -hwaccel mediacodec
+# to that child process. Hardware decode is selected only by the JNI-loaded
+# libdreamdisplays_lav.so, where the real JavaVM is registered first.
 ./android.sh \
   --api-level=24 \
   --speed \
   --enable-gnutls \
   --enable-android-zlib \
+  --enable-android-media-codec \
   --disable-arm-v7a \
   --disable-arm-v7a-neon \
   --disable-x86 \
@@ -51,6 +48,13 @@ cp prebuilt/android-arm64/ffmpeg/bin/ffmpeg "${native_dir}/libffmpeg.so"
 cp prebuilt/android-arm64/ffmpeg/bin/ffprobe "${native_dir}/libffprobe.so"
 cp prebuilt/android-arm64/ffmpeg/lib/*.so "${native_dir}/"
 
+# ffmpeg-kit places external shared dependencies (GnuTLS, nettle, etc.) under
+# prebuilt/android-arm64. Include every produced .so so the in-process LAV loader
+# can copy a complete dependency set from the helper APK at runtime.
+find prebuilt/android-arm64 -type f -name '*.so' -not -path '*/ffmpeg/lib/*' -print0 | while IFS= read -r -d '' lib; do
+  cp -f "$lib" "${native_dir}/$(basename "$lib")"
+done
+
 if [[ -f android/libs/arm64-v8a/libc++_shared.so ]]; then
   cp android/libs/arm64-v8a/libc++_shared.so "${native_dir}/"
 fi
@@ -60,11 +64,10 @@ rm -f libraries.jar
 zip -q -r libraries.jar lib/
 
 cd "${plugin_dir}"
-sed -i 's/versionCode 3/versionCode 5/' app/build.gradle
-sed -i 's/versionName "1.2"/versionName "1.4-kirazium-dd-swdecode"/' app/build.gradle
+sed -i 's/versionCode 3/versionCode 6/' app/build.gradle
+sed -i 's/versionName "1.2"/versionName "1.5-kirazium-dd-mediacodec"/' app/build.gradle
 sed -i 's/MojoLauncher FFmpeg Plugin/Kirazium Dream Displays FFmpeg/' \
   app/src/main/res/values/strings.xml
 
 chmod +x gradlew
 ./gradlew assembleDebug --stacktrace
-
