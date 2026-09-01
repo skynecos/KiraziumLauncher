@@ -43,7 +43,8 @@ jobs:
           cp tools/dreamdisplays-android/apply-android4.py "$SRC/apply-kirazium-android4.py"
           cp tools/dreamdisplays-android/apply-android5.py "$SRC/apply-kirazium-android5.py"
           cp tools/dreamdisplays-android/apply-android6.py "$SRC/apply-kirazium-android6.py"
-          cp tools/dreamdisplays-android/apply-android7.py "$SRC/apply-kirazium-android7.py"
+          cp tools/dreamdisplays-android/apply-android8.py "$SRC/apply-kirazium-android8.py"
+          cp tools/dreamdisplays-android/apply-android8.py "$SRC/apply-kirazium-android8.py"
 
       - name: Apply Android compatibility patches
         run: |
@@ -53,7 +54,8 @@ jobs:
           python3 ./apply-kirazium-android4.py
           python3 ./apply-kirazium-android5.py
           python3 ./apply-kirazium-android6.py
-          python3 ./apply-kirazium-android7.py
+          python3 ./apply-kirazium-android8.py
+          python3 ./apply-kirazium-android8.py
 
       - name: Build Android ARM64 native frame pipe
         run: |
@@ -96,7 +98,7 @@ jobs:
           "$TOOLCHAIN/llvm-readelf" -h "$BUNDLE/libdreamdisplays_native.so" | grep -q 'AArch64'
           chmod +x "$SRC/gradlew"
 
-      - name: Preflight Dream Displays Android7 patches
+      - name: Preflight Dream Displays Android8 patches
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/dreamdisplays"
@@ -121,9 +123,9 @@ jobs:
           grep -q "POJAV_FFMPEG_PATH" platform/client/common/src/main/kotlin/com/dreamdisplays/platform/client/render/RenderBackendCompat.kt
           grep -q "MOD_ANDROID_RUNTIME" media/player/src/main/kotlin/com/dreamdisplays/media/player/nativebridge/NativeMedia.kt
           grep -q "Using Android FFmpeg library directory" native/src/session.rs
-          grep -q "version=1.9.5-kirazium-android7" gradle.properties
+          grep -q "version=1.9.5-kirazium-android8" gradle.properties
 
-      - name: Build Fabric 26.1.2 Android7 mod
+      - name: Build Fabric 26.1.2 Android8 mod
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/dreamdisplays"
@@ -137,15 +139,15 @@ jobs:
           set -euo pipefail
           SRC="$RUNNER_TEMP/dreamdisplays"
           mkdir -p out
-          JAR="$SRC/build/libs/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android7.jar"
+          JAR="$SRC/build/libs/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android8.jar"
           if [[ ! -s "$JAR" ]]; then
-            echo "Expected Android7 JAR not found. Available build outputs:"
+            echo "Expected Android8 JAR not found. Available build outputs:"
             find "$SRC/build/libs" -maxdepth 1 -type f -name '*.jar' -print || true
             exit 1
           fi
           jar tf "$JAR" | grep -q 'dreamdisplays-natives/linux-aarch64/libdreamdisplays_native.so'
-          cp "$JAR" out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android7.jar
-          sha256sum out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android7.jar > out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android7.jar.sha256
+          cp "$JAR" out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android8.jar
+          sha256sum out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android8.jar > out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android8.jar.sha256
 
       - name: Upload Android-patched Dream Displays
         uses: actions/upload-artifact@v4
