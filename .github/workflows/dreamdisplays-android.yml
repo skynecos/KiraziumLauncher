@@ -14,6 +14,7 @@ permissions:
 
 env:
   DREAMDISPLAYS_UPSTREAM_COMMIT: "bb5e1457bd4717561d367b329440e507878748e1"
+  ANDROID_NDK_VERSION: "25.1.8937393"
 
 jobs:
   build-fabric-26-1-2:
@@ -42,6 +43,7 @@ jobs:
           cp tools/dreamdisplays-android/apply-android4.py "$SRC/apply-kirazium-android4.py"
           cp tools/dreamdisplays-android/apply-android5.py "$SRC/apply-kirazium-android5.py"
           cp tools/dreamdisplays-android/apply-android6.py "$SRC/apply-kirazium-android6.py"
+          cp tools/dreamdisplays-android/apply-android7.py "$SRC/apply-kirazium-android7.py"
 
       - name: Apply Android compatibility patches
         run: |
@@ -51,9 +53,50 @@ jobs:
           python3 ./apply-kirazium-android4.py
           python3 ./apply-kirazium-android5.py
           python3 ./apply-kirazium-android6.py
-          chmod +x ./gradlew
+          python3 ./apply-kirazium-android7.py
 
-      - name: Preflight Dream Displays Android6 patches
+      - name: Build Android ARM64 native frame pipe
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$SDK_ROOT" ]; then
+            echo "::error::Android SDK is unavailable on the runner."
+            exit 1
+          fi
+
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -perm -u+x | head -n 1 || true)"
+          fi
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager was not found under $SDK_ROOT/cmdline-tools."
+            exit 1
+          fi
+
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "ndk;${ANDROID_NDK_VERSION}"
+
+          NDK_ROOT="$SDK_ROOT/ndk/${ANDROID_NDK_VERSION}"
+          TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          test -x "$TOOLCHAIN/aarch64-linux-android21-clang"
+          command -v rustup
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-linux-android
+
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android21-clang"
+          SRC="$RUNNER_TEMP/dreamdisplays"
+          cd "$SRC/native"
+          cargo build --locked --release --target aarch64-linux-android -p dreamdisplays-native
+
+          BUNDLE="$SRC/native/build/ci-bundle/dreamdisplays-natives/linux-aarch64"
+          mkdir -p "$BUNDLE"
+          cp target/aarch64-linux-android/release/libdreamdisplays_native.so "$BUNDLE/libdreamdisplays_native.so"
+          test -s "$BUNDLE/libdreamdisplays_native.so"
+          "$TOOLCHAIN/llvm-readelf" -h "$BUNDLE/libdreamdisplays_native.so" | grep -q 'AArch64'
+          chmod +x "$SRC/gradlew"
+
+      - name: Preflight Dream Displays Android7 patches
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/dreamdisplays"
@@ -63,6 +106,7 @@ jobs:
           test -f media/player/src/main/kotlin/com/dreamdisplays/media/player/process/HwAccelBackend.kt
           test -f media/player/src/main/kotlin/com/dreamdisplays/media/player/pipeline/AndroidOpenALLine.kt
           test -f platform/client/common/src/main/kotlin/com/dreamdisplays/platform/client/render/AsyncTextureUploader.kt
+          test -s native/build/ci-bundle/dreamdisplays-natives/linux-aarch64/libdreamdisplays_native.so
           grep -q "POJAV_FFMPEG_PATH" media/player/src/main/kotlin/com/dreamdisplays/media/player/process/FFmpegBinary.kt
           grep -q "LD_LIBRARY_PATH" media/player/src/main/kotlin/com/dreamdisplays/media/player/process/FFmpegBinary.kt
           grep -q "FFmpegBinary.processBuilder" media/player/src/main/kotlin/com/dreamdisplays/media/player/process/MediaProcess.kt
@@ -75,9 +119,11 @@ jobs:
           grep -q "thread-local context" media/player/src/main/kotlin/com/dreamdisplays/media/player/pipeline/AudioSink.kt
           grep -q "lwjgl-openal:3.4.1" media/player/build.gradle.kts
           grep -q "POJAV_FFMPEG_PATH" platform/client/common/src/main/kotlin/com/dreamdisplays/platform/client/render/RenderBackendCompat.kt
-          grep -q "version=1.9.5-kirazium-android6" gradle.properties
+          grep -q "MOD_ANDROID_RUNTIME" media/player/src/main/kotlin/com/dreamdisplays/media/player/nativebridge/NativeMedia.kt
+          grep -q "Using Android FFmpeg library directory" native/src/session.rs
+          grep -q "version=1.9.5-kirazium-android7" gradle.properties
 
-      - name: Build Fabric 26.1.2 Android6 mod
+      - name: Build Fabric 26.1.2 Android7 mod
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/dreamdisplays"
@@ -91,14 +137,15 @@ jobs:
           set -euo pipefail
           SRC="$RUNNER_TEMP/dreamdisplays"
           mkdir -p out
-          JAR="$SRC/build/libs/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android6.jar"
+          JAR="$SRC/build/libs/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android7.jar"
           if [[ ! -s "$JAR" ]]; then
-            echo "Expected Android6 JAR not found. Available build outputs:"
+            echo "Expected Android7 JAR not found. Available build outputs:"
             find "$SRC/build/libs" -maxdepth 1 -type f -name '*.jar' -print || true
             exit 1
           fi
-          cp "$JAR" out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android6.jar
-          sha256sum out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android6.jar > out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android6.jar.sha256
+          jar tf "$JAR" | grep -q 'dreamdisplays-natives/linux-aarch64/libdreamdisplays_native.so'
+          cp "$JAR" out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android7.jar
+          sha256sum out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android7.jar > out/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android7.jar.sha256
 
       - name: Upload Android-patched Dream Displays
         uses: actions/upload-artifact@v4
