@@ -43,7 +43,7 @@ jobs:
           cp tools/dreamdisplays-android/apply-android4.py "$SRC/apply-kirazium-android4.py"
           cp tools/dreamdisplays-android/apply-android5.py "$SRC/apply-kirazium-android5.py"
           cp tools/dreamdisplays-android/apply-android6.py "$SRC/apply-kirazium-android6.py"
-          cp tools/dreamdisplays-android/apply-android8.py "$SRC/apply-kirazium-android8.py"
+          cp tools/dreamdisplays-android/apply-android7.py "$SRC/apply-kirazium-android7.py"
           cp tools/dreamdisplays-android/apply-android8.py "$SRC/apply-kirazium-android8.py"
 
       - name: Apply Android compatibility patches
@@ -54,7 +54,7 @@ jobs:
           python3 ./apply-kirazium-android4.py
           python3 ./apply-kirazium-android5.py
           python3 ./apply-kirazium-android6.py
-          python3 ./apply-kirazium-android8.py
+          python3 ./apply-kirazium-android7.py
           python3 ./apply-kirazium-android8.py
 
       - name: Build Android ARM64 native frame pipe
