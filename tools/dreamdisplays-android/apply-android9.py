@@ -288,14 +288,19 @@ replace(
 )
 
 # The Android9 target is 26.1.2 (deobfuscated), so Parchment is not used for
-# mappings. Keeping the optional Parchment Maven in the repository chain can
-# still stall unrelated dependencies such as NewPipeExtractor when that Maven
-# is down. Remove it for this Android-only build so resolution proceeds to the
-# proper repositories (including JitPack) instead of timing out.
+# mappings. Keeping Parchment in either the Fabric project or the global
+# dependency/plugin repository chains can still intercept unrelated artifacts
+# such as NewPipeExtractor and fail the entire build when Parchment is down.
 replace(
     "platform/client/fabric/build.gradle.kts",
     '    maven("https://maven.parchmentmc.org")\n',
     "",
+)
+replace(
+    "settings.gradle.kts",
+    '        maven("https://maven.parchmentmc.org")\n',
+    "",
+    count=2,
 )
 
 gp = ROOT / "gradle.properties"
