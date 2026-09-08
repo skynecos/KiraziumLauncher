@@ -51,13 +51,16 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
 
-      - name: Build unsigned release APK
+      - name: Build installable test and unsigned release APKs
         env:
           CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
         run: |
           set -euo pipefail
           chmod +x gradlew
-          ./gradlew :app_pojavlauncher:assembleFullRelease --stacktrace
+          ./gradlew \
+            :app_pojavlauncher:assembleFullRelease \
+            :app_pojavlauncher:assembleFullDebug \
+            --stacktrace
 
       - name: Verify unsigned CI APK
         run: |
@@ -71,10 +74,20 @@ jobs:
           fi
           APK="${APKS[0]}"
           test -s "$APK"
-          if ! unzip -l "$APK" | grep -q 'lib/arm64-v8a/libjsound.so'; then
-            echo "::error::APK does not contain the Android JavaSound backend."
+          mapfile -t TEST_APKS < <(find app_pojavlauncher/build/outputs/apk/full/debug -maxdepth 1 -type f -name '*.apk' -print)
+          if [ "${#TEST_APKS[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one debug-signed fullDebug APK, found ${#TEST_APKS[@]}."
+            printf '%s\n' "${TEST_APKS[@]:-}"
             exit 1
           fi
+          TEST_APK="${TEST_APKS[0]}"
+          test -s "$TEST_APK"
+          for candidate in "$APK" "$TEST_APK"; do
+            if ! unzip -l "$candidate" | grep -q 'lib/arm64-v8a/libjsound.so'; then
+              echo "::error::APK does not contain the Android JavaSound backend: $candidate"
+              exit 1
+            fi
+          done
           unzip -p "$APK" lib/arm64-v8a/libjsound.so > "${RUNNER_TEMP}/libjsound.so"
           for symbol in \
             Java_com_sun_media_sound_Platform_nIsBigEndian \
@@ -87,9 +100,13 @@ jobs:
             fi
           done
           cp "$APK" quota-safe-release/KiraziumLauncher-Unsigned-CI.apk
-          sha256sum quota-safe-release/KiraziumLauncher-Unsigned-CI.apk > quota-safe-release/SHA256SUMS.txt
-          sha256sum -c quota-safe-release/SHA256SUMS.txt
-          printf 'source_commit=%s\nworkflow=quota-safe\n' "$GITHUB_SHA" > quota-safe-release/BUILD_INFO.txt
+          cp "$TEST_APK" quota-safe-release/KiraziumLauncher-AndroidTest.apk
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          APKSIGNER="$(find "$SDK_ROOT/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose quota-safe-release/KiraziumLauncher-AndroidTest.apk
+          (cd quota-safe-release && sha256sum *.apk > SHA256SUMS.txt && sha256sum -c SHA256SUMS.txt)
+          printf 'source_commit=%s\nworkflow=quota-safe\ninstallable_apk=KiraziumLauncher-AndroidTest.apk\n' "$GITHUB_SHA" > quota-safe-release/BUILD_INFO.txt
 
       - name: Publish unsigned CI APK to quota-safe branch
         env:
