@@ -28,6 +28,31 @@ import java.util.TimeZone;
 
 public class JavaRunner {
 
+    /**
+     * The OpenJDK desktop runtime loads jsound as a bootstrap/system native library. On Android,
+     * that lookup only searches the selected runtime's lib directory, not the launcher's APK
+     * nativeLibraryDir. Keep the Android OpenSL ES jsound shim beside the selected JRE libraries so
+     * JavaSound can resolve it normally.
+     */
+    private static void prepareAndroidJavaSound(File runtimeHomeDir) {
+        File source = new File(NATIVE_LIB_DIR, "libjsound.so");
+        if(!source.isFile()) {
+            Log.w("JavaRunner", "Android JavaSound shim is missing from launcher native libraries: " + source);
+            return;
+        }
+
+        File target = new File(runtimeHomeDir, "lib/libjsound.so");
+        try {
+            if(!target.isFile() || target.length() != source.length()) {
+                org.apache.commons.io.FileUtils.copyFile(source, target);
+                target.setReadable(true, false);
+                Log.i("JavaRunner", "Installed Android JavaSound shim into runtime: " + target);
+            }
+        } catch (Exception e) {
+            Log.w("JavaRunner", "Failed to install Android JavaSound shim into runtime", e);
+        }
+    }
+
     private static boolean getCacioJavaArgs(List<String> javaArgList, boolean isJava8) {
         // Caciocavallo config AWT-enabled version
         javaArgList.add("-Djava.awt.headless=false");
@@ -266,6 +291,7 @@ public class JavaRunner {
      */
     public static void startJvm(Runtime runtime, List<String> vmArgs, List<String> classpathEntries, String mainClass, List<String> applicationArgs) throws VMLoadException{
         File runtimeHomeDir = MultiRTUtils.getRuntimeHome(runtime.name);
+        prepareAndroidJavaSound(runtimeHomeDir);
         File vmPath = findVmPath(runtimeHomeDir, runtime.arch);
         if(vmPath == null) {
             throw new VMLoadException("Unable to find the Java VM", 0, -1);
