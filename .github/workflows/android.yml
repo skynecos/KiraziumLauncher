@@ -13,7 +13,8 @@ on:
         default: false
         type: boolean
 
-# Push CI is read-only. Only the explicitly requested signed-release job gets write access.
+# BYPASS ON: CI build outputs are published to an isolated branch instead of
+# GitHub Actions artifact storage. Only explicit signed releases publish a Release.
 permissions:
   contents: read
 
@@ -21,7 +22,7 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     permissions:
-      contents: read
+      contents: write
       actions: read
 
     steps:
@@ -58,13 +59,46 @@ jobs:
           chmod +x gradlew
           ./gradlew :app_pojavlauncher:assembleFullRelease --stacktrace
 
-      - name: Upload unsigned CI APK
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: KiraziumLauncher-Unsigned-CI
-          path: app_pojavlauncher/build/outputs/apk/full/release/*.apk
-          if-no-files-found: error
-          retention-days: 3
+      - name: Verify unsigned CI APK
+        run: |
+          set -euo pipefail
+          mkdir -p quota-safe-release
+          mapfile -t APKS < <(find app_pojavlauncher/build/outputs/apk/full/release -maxdepth 1 -type f -name '*.apk' -print)
+          if [ "${#APKS[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one unsigned fullRelease APK, found ${#APKS[@]}."
+            printf '%s\n' "${APKS[@]:-}"
+            exit 1
+          fi
+          APK="${APKS[0]}"
+          test -s "$APK"
+          cp "$APK" quota-safe-release/KiraziumLauncher-Unsigned-CI.apk
+          sha256sum quota-safe-release/KiraziumLauncher-Unsigned-CI.apk > quota-safe-release/SHA256SUMS.txt
+          sha256sum -c quota-safe-release/SHA256SUMS.txt
+          printf 'source_commit=%s\nworkflow=quota-safe\n' "$GITHUB_SHA" > quota-safe-release/BUILD_INFO.txt
+
+      - name: Publish unsigned CI APK to quota-safe branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          staged="${RUNNER_TEMP}/kirazium-launcher-ci-stage"
+          output="${RUNNER_TEMP}/kirazium-launcher-ci-output"
+          mkdir -p "$staged"
+          cp quota-safe-release/* "$staged/"
+
+          git worktree add --detach "$output" "$GITHUB_SHA"
+          cd "$output"
+          git switch --orphan kirazium-launcher-ci-build
+          git rm -rf . >/dev/null 2>&1 || true
+          mkdir -p artifacts
+          cp "$staged"/* artifacts/
+          git add artifacts
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "build: quota-safe unsigned Kirazium Launcher APK"
+          git push --force \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:refs/heads/kirazium-launcher-ci-build
 
   signed_release:
     if: >-
@@ -85,11 +119,31 @@ jobs:
       EXPECTED_KIRAZIUM_KEYSTORE_SHA256: "c28442da2dbbc2b49df476077f5959b7970c3116b71e7929835dec39a9df93f5"
 
     steps:
-      - name: Download unsigned APK from verified build
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - name: Checkout quota-safe unsigned APK
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          name: KiraziumLauncher-Unsigned-CI
-          path: unsigned
+          ref: kirazium-launcher-ci-build
+          path: ci-build
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify quota-safe APK belongs to this source commit
+        run: |
+          set -euo pipefail
+          BUILD_INFO="ci-build/artifacts/BUILD_INFO.txt"
+          APK="ci-build/artifacts/KiraziumLauncher-Unsigned-CI.apk"
+          SUMS="ci-build/artifacts/SHA256SUMS.txt"
+          test -s "$BUILD_INFO"
+          test -s "$APK"
+          test -s "$SUMS"
+          SOURCE_COMMIT="$(awk -F= '$1 == "source_commit" {print $2; exit}' "$BUILD_INFO")"
+          if [ "$SOURCE_COMMIT" != "$GITHUB_SHA" ]; then
+            echo "::error::Quota-safe APK source commit mismatch: expected $GITHUB_SHA, got $SOURCE_COMMIT"
+            exit 1
+          fi
+          (cd ci-build/artifacts && sha256sum -c SHA256SUMS.txt)
+          mkdir -p unsigned
+          cp "$APK" unsigned/
 
       - name: Prepare and verify private Kirazium signing key
         env:
