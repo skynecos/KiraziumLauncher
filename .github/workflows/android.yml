@@ -57,10 +57,11 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x gradlew
-          ./gradlew \
-            :app_pojavlauncher:assembleFullRelease \
-            :app_pojavlauncher:assembleFullDebug \
-            --stacktrace
+          # These variants intentionally share downloaded runtime inputs. Keep them in
+          # separate Gradle task graphs so Gradle 8 does not treat that shared cache as
+          # an undeclared cross-variant task dependency.
+          ./gradlew :app_pojavlauncher:assembleFullRelease --stacktrace
+          ./gradlew :app_pojavlauncher:assembleFullDebug --stacktrace
 
       - name: Verify unsigned CI APK
         run: |
