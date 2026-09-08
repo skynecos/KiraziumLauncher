@@ -44,8 +44,8 @@ static jint hooked_ProcessImpl_forkAndExec(JNIEnv *env, jobject process, jint mo
     const char *pProg = (char *)((*env)->GetByteArrayElements(env, prog, NULL));
     const char* pProgBaseName = basename(pProg);
     const size_t basename_len = strlen(pProgBaseName);
-    char prog_basename[basename_len];
-    memcpy(&prog_basename, pProgBaseName, basename_len + 1);
+    char prog_basename[basename_len + 1];
+    memcpy(prog_basename, pProgBaseName, basename_len + 1);
     (*env)->ReleaseByteArrayElements(env, prog, (jbyte *)pProg, 0);
 
     if(strcmp(prog_basename, "xdg-open") == 0) {
@@ -64,7 +64,13 @@ static jint hooked_ProcessImpl_forkAndExec(JNIEnv *env, jobject process, jint mo
         // they may interfere with ffmpeg dependencies.
         const char* ffmpeg_path = getenv("POJAV_FFMPEG_PATH");
         if(ffmpeg_path != NULL) {
-            replaceLibPathInEnvBlock(env, &envBlock, &envc, dirname(ffmpeg_path));
+            // dirname() is allowed to mutate its input. Never pass getenv() storage directly,
+            // otherwise POJAV_FFMPEG_PATH itself may be corrupted after the first invocation.
+            char* ffmpeg_path_copy = strdup(ffmpeg_path);
+            if(ffmpeg_path_copy != NULL) {
+                replaceLibPathInEnvBlock(env, &envBlock, &envc, dirname(ffmpeg_path_copy));
+                free(ffmpeg_path_copy);
+            }
             prog = stringToBytes(env, ffmpeg_path);
         }
     }
