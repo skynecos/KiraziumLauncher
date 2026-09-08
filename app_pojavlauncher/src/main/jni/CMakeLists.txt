@@ -36,6 +36,16 @@ target_link_libraries(SDL3-shared PRIVATE mojoexec)
 
 project("MojoLauncher")
 
+# JavaSound is part of java.desktop, but the Android OpenJDK runtime cannot use
+# the desktop ALSA implementation.  Provide the standard libjsound JNI surface
+# through OpenSL ES so Java applications can open a SourceDataLine on Android.
+add_library(jsound SHARED
+        jsound/android_jsound.c
+)
+target_compile_features(jsound PRIVATE c_std_11)
+target_compile_options(jsound PRIVATE -Wall -Wextra -Werror=return-type)
+target_link_libraries(jsound PRIVATE OpenSLES log)
+
 add_library(pojavexec SHARED
         affinity.c
         jvm_hooks/emui_iterator_fix_hook.c

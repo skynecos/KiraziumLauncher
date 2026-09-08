@@ -71,6 +71,21 @@ jobs:
           fi
           APK="${APKS[0]}"
           test -s "$APK"
+          if ! unzip -l "$APK" | grep -q 'lib/arm64-v8a/libjsound.so'; then
+            echo "::error::APK does not contain the Android JavaSound backend."
+            exit 1
+          fi
+          unzip -p "$APK" lib/arm64-v8a/libjsound.so > "${RUNNER_TEMP}/libjsound.so"
+          for symbol in \
+            Java_com_sun_media_sound_Platform_nIsBigEndian \
+            Java_com_sun_media_sound_DirectAudioDeviceProvider_nGetNumDevices \
+            Java_com_sun_media_sound_DirectAudioDevice_nOpen \
+            Java_com_sun_media_sound_DirectAudioDevice_nWrite; do
+            if ! readelf --wide --dyn-syms "${RUNNER_TEMP}/libjsound.so" | grep -q "$symbol"; then
+              echo "::error::libjsound.so is missing JNI symbol: $symbol"
+              exit 1
+            fi
+          done
           cp "$APK" quota-safe-release/KiraziumLauncher-Unsigned-CI.apk
           sha256sum quota-safe-release/KiraziumLauncher-Unsigned-CI.apk > quota-safe-release/SHA256SUMS.txt
           sha256sum -c quota-safe-release/SHA256SUMS.txt
