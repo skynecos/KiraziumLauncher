@@ -17,9 +17,13 @@ import org.json.JSONObject;
 import java.io.BufferedOutputStream;
 import java.io.DataOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -61,6 +65,15 @@ public final class KiraziumBootstrap {
             ".kirazium-resource-pack-compat-v3";
     private static final String LANGUAGE_MARKER = ".kirazium-language-tr-v1";
     private static final String OPTIMIZATION_MARKER = ".kirazium-low-end-v2";
+    private static final String EMBEDDED_CINEMA_FILENAME =
+            "dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android-stallfix1.jar";
+    private static final String EMBEDDED_CINEMA_ASSET =
+            "kirazium/mods/" + EMBEDDED_CINEMA_FILENAME;
+    private static final String EMBEDDED_CINEMA_SHA256 =
+            "918872694b9fe437b6c412dda287e717d33b654a1bf8885af0ceea0ed38caab1";
+    private static final long EMBEDDED_CINEMA_SIZE = 23_595_235L;
+    private static final String EMBEDDED_CINEMA_MARKER =
+            ".kirazium-dreamdisplays-stallfix1";
     public static final String LOW_GRAPHICS_PREFERENCE = "kiraziumLowGraphicsMode";
     private static final String BACKUP_RAM_PREFERENCE = "kiraziumNormalRamAllocation";
     private static final String RAM_INDEPENDENCE_MARKER =
@@ -70,6 +83,106 @@ public final class KiraziumBootstrap {
     private static final String BACKUP_SUSTAINED_PREFERENCE = "kiraziumNormalSustainedPerformance";
 
     private KiraziumBootstrap() {
+    }
+
+    /** Installs the phone-tested DreamDisplays build carried inside the launcher APK. */
+    public static void ensureEmbeddedCinemaMod(Context context) {
+        if (context == null || Tools.DIR_GAME_NEW == null) return;
+
+        File modsDirectory = new File(Tools.DIR_GAME_NEW, "mods");
+        File destination = new File(modsDirectory, EMBEDDED_CINEMA_FILENAME);
+        File marker = new File(modsDirectory, EMBEDDED_CINEMA_MARKER);
+        try {
+            FileUtils.ensureDirectory(modsDirectory);
+            boolean current = destination.isFile() &&
+                    destination.length() == EMBEDDED_CINEMA_SIZE &&
+                    marker.isFile() &&
+                    EMBEDDED_CINEMA_SHA256.equals(Tools.read(marker).trim());
+            if (!current) {
+                installEmbeddedCinemaMod(context, destination, marker);
+            }
+            removeSupersededCinemaMods(modsDirectory, destination);
+        } catch (IOException exception) {
+            Log.w(TAG, "Embedded DreamDisplays mod could not be prepared", exception);
+        }
+    }
+
+    private static void installEmbeddedCinemaMod(Context context, File destination, File marker)
+            throws IOException {
+        File temporary = new File(destination.getParentFile(), destination.getName() + ".tmp");
+        if (temporary.exists() && !temporary.delete()) {
+            throw new IOException("Could not remove stale DreamDisplays temporary file");
+        }
+
+        try (InputStream input = context.getAssets().open(EMBEDDED_CINEMA_ASSET);
+             FileOutputStream output = new FileOutputStream(temporary)) {
+            byte[] buffer = new byte[64 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                output.write(buffer, 0, count);
+            }
+            output.getFD().sync();
+        }
+
+        if (temporary.length() != EMBEDDED_CINEMA_SIZE ||
+                !EMBEDDED_CINEMA_SHA256.equals(sha256(temporary))) {
+            temporary.delete();
+            throw new IOException("Embedded DreamDisplays checksum mismatch");
+        }
+        if (destination.exists() && !destination.delete()) {
+            temporary.delete();
+            throw new IOException("Could not replace the installed DreamDisplays mod");
+        }
+        if (!temporary.renameTo(destination)) {
+            temporary.delete();
+            throw new IOException("Could not activate the embedded DreamDisplays mod");
+        }
+        Tools.write(marker, EMBEDDED_CINEMA_SHA256 + "\n");
+        Log.i(TAG, "Installed embedded DreamDisplays stall-fix build");
+    }
+
+    private static void removeSupersededCinemaMods(File modsDirectory, File current)
+            throws IOException {
+        File[] files = modsDirectory.listFiles();
+        if (files == null) return;
+
+        for (File file : files) {
+            if (!file.isFile() || file.equals(current)) continue;
+            String name = file.getName().toLowerCase(Locale.ROOT);
+            boolean oldJar = name.endsWith(".jar") && name.contains("dreamdisplays");
+            boolean oldMarker = name.startsWith(".kirazium-dreamdisplays-") &&
+                    !name.equals(EMBEDDED_CINEMA_MARKER);
+            if (!oldJar && !oldMarker) continue;
+            if (file.delete()) continue;
+
+            File disabled = new File(modsDirectory, file.getName() + ".disabled");
+            if (disabled.exists()) disabled.delete();
+            if (!file.renameTo(disabled)) {
+                throw new IOException("Could not disable superseded DreamDisplays file: " + file);
+            }
+        }
+    }
+
+    private static String sha256(File file) throws IOException {
+        final MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
+
+        try (FileInputStream input = new FileInputStream(file)) {
+            byte[] buffer = new byte[64 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                digest.update(buffer, 0, count);
+            }
+        }
+        StringBuilder result = new StringBuilder(64);
+        for (byte value : digest.digest()) {
+            result.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+        }
+        return result.toString();
     }
 
     public static String installFabricProfile() throws IOException {
