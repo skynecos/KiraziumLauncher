@@ -72,8 +72,11 @@ jobs:
           APK="${APKS[0]}"
           test -s "$APK"
           cp "$APK" quota-safe-release/KiraziumLauncher-Unsigned-CI.apk
-          sha256sum quota-safe-release/KiraziumLauncher-Unsigned-CI.apk > quota-safe-release/SHA256SUMS.txt
-          sha256sum -c quota-safe-release/SHA256SUMS.txt
+          (
+            cd quota-safe-release
+            sha256sum KiraziumLauncher-Unsigned-CI.apk > SHA256SUMS.txt
+            sha256sum -c SHA256SUMS.txt
+          )
           printf 'source_commit=%s\nworkflow=quota-safe\n' "$GITHUB_SHA" > quota-safe-release/BUILD_INFO.txt
 
       - name: Publish unsigned CI APK to quota-safe branch
