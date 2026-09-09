@@ -136,6 +136,11 @@ public class JREUtils {
 
         setupAngleEnv(context, envMap);
         setupFfmpegEnv(context, envMap);
+
+        if ("opengles_mobileglues".equals(renderer)) {
+            envMap.put("MG_DIR_PATH", Tools.DIR_DATA + "/MobileGlues");
+        }
+
         // Init mesa renderers
         MesaUtils.initEnvironment(context, renderer, envMap);
 
@@ -253,6 +258,11 @@ public class JREUtils {
                 break;
             case "opengles3_ltw" :
                 renderLibrary = "libltw.so";
+                useGles = true;
+                glesVersion = 3;
+                break;
+            case "opengles_mobileglues" :
+                renderLibrary = "libmobileglues.so";
                 useGles = true;
                 glesVersion = 3;
                 break;
