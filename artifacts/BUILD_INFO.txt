@@ -1,0 +1,5 @@
+source_commit=4efd40ddbc8319afeda587f7bc34b496f954c93e
+source_branch=codex/android11-hwdecode-current-ui
+workflow=android11-current-ui-signed
+mobileglues_commit=f56af31d3e490d95808b3adc4ace20234249a37a
+default_renderer=opengles2
