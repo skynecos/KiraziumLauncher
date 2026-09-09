@@ -12,6 +12,9 @@ on:
       - "build.gradle"
       - "settings.gradle"
       - "app_pojavlauncher/build.gradle"
+      - "app_pojavlauncher/src/main/assets/kirazium/mods/**"
+      - "app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/PojavApplication.java"
+      - "app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/instances/KiraziumBootstrap.java"
       - "app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/utils/JREUtils.java"
       - "app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/utils/MrpackInstaller.java"
       - "app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/fragments/MainMenuFragment.java"
@@ -28,6 +31,9 @@ env:
   EXPECTED_KIRAZIUM_CERT_SHA256: "206d0a623973d12b6f50f147d6e9417c164f3b66a30ce1f418c34940e94bb755"
   EXPECTED_KIRAZIUM_KEYSTORE_SHA256: "c28442da2dbbc2b49df476077f5959b7970c3116b71e7929835dec39a9df93f5"
   EXPECTED_MOBILEGLUES_COMMIT: "f56af31d3e490d95808b3adc4ace20234249a37a"
+  DREAMDISPLAYS_FILENAME: "dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android-stallfix1.jar"
+  DREAMDISPLAYS_SHA256: "918872694b9fe437b6c412dda287e717d33b654a1bf8885af0ceea0ed38caab1"
+  DREAMDISPLAYS_SIZE: "23595235"
 
 jobs:
   build-single-apk:
@@ -50,6 +56,14 @@ jobs:
           grep -F 'public static String PREF_RENDERER = "opengles2";' app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/prefs/LauncherPreferences.java >/dev/null
           grep -F 'useLegacyPackaging = true' app_pojavlauncher/build.gradle >/dev/null
           test "$(git -C MobileGlues rev-parse HEAD)" = "$EXPECTED_MOBILEGLUES_COMMIT"
+          DREAMDISPLAYS_ASSET="app_pojavlauncher/src/main/assets/kirazium/mods/$DREAMDISPLAYS_FILENAME"
+          test -s "$DREAMDISPLAYS_ASSET"
+          test "$(stat -c '%s' "$DREAMDISPLAYS_ASSET")" = "$DREAMDISPLAYS_SIZE"
+          test "$(sha256sum "$DREAMDISPLAYS_ASSET" | awk '{print $1}')" = "$DREAMDISPLAYS_SHA256"
+          grep -F 'KiraziumBootstrap.ensureEmbeddedCinemaMod(this);' \
+            app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/PojavApplication.java >/dev/null
+          grep -F 'Installed embedded DreamDisplays stall-fix build' \
+            app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/instances/KiraziumBootstrap.java >/dev/null
 
       - name: Install native FFmpeg build tools and pinned NDKs
         run: |
@@ -157,7 +171,7 @@ jobs:
           unset ANDROID_NDK_ROOT
           ./gradlew :app_pojavlauncher:assembleFullRelease --stacktrace
 
-      - name: Verify embedded FFmpeg is complete inside launcher APK
+      - name: Verify embedded FFmpeg and DreamDisplays inside launcher APK
         run: |
           set -euo pipefail
           APK="$(find app_pojavlauncher/build/outputs/apk/full/release -type f -name '*.apk' | head -n 1)"
@@ -174,6 +188,11 @@ jobs:
           strings verify/ffmpeg/libavformat.so | grep -q -- '--enable-gnutls'
           strings verify/ffmpeg/libavcodec.so | grep -q -- '--enable-jni'
 
+          DREAMDISPLAYS_APK_PATH="assets/kirazium/mods/$DREAMDISPLAYS_FILENAME"
+          unzip -p "$APK" "$DREAMDISPLAYS_APK_PATH" > "verify/$DREAMDISPLAYS_FILENAME"
+          test "$(stat -c '%s' "verify/$DREAMDISPLAYS_FILENAME")" = "$DREAMDISPLAYS_SIZE"
+          test "$(sha256sum "verify/$DREAMDISPLAYS_FILENAME" | awk '{print $1}')" = "$DREAMDISPLAYS_SHA256"
+
           # Ensure the embedded-first marker made it into compiled dex, not only the source tree.
           found_marker=0
           while IFS= read -r dex; do
@@ -183,6 +202,15 @@ jobs:
             fi
           done < <(unzip -Z1 "$APK" | grep -E '^classes([0-9]+)?\.dex$')
           test "$found_marker" = 1
+
+          found_cinema_marker=0
+          while IFS= read -r dex; do
+            if unzip -p "$APK" "$dex" | strings | grep -Fq 'Installed embedded DreamDisplays stall-fix build'; then
+              found_cinema_marker=1
+              break
+            fi
+          done < <(unzip -Z1 "$APK" | grep -E '^classes([0-9]+)?\.dex$')
+          test "$found_cinema_marker" = 1
 
           # Verify every non-platform DT_NEEDED edge in the FFmpeg bundle is packaged beside it.
           VERIFY_ALL="$RUNNER_TEMP/verify-all-libs"
@@ -274,12 +302,13 @@ jobs:
           git rm -rf . >/dev/null 2>&1 || true
           mkdir -p artifacts
           cp "$staged"/* artifacts/
-          printf 'source_commit=%s\nsource_branch=codex/embedded-ffmpeg-single-apk\nworkflow=embedded-ffmpeg-single-apk\nffmpeg_plugin_commit=%s\nffmpeg_kit_commit=%s\nffmpeg_ndk=%s\ndefault_renderer=opengles2\n' \
-            "$GITHUB_SHA" "$FFMPEG_PLUGIN_COMMIT" "$FFMPEG_KIT_COMMIT" "$FFMPEG_NDK_VERSION" > artifacts/BUILD_INFO.txt
+          printf 'source_commit=%s\nsource_branch=codex/embedded-ffmpeg-single-apk\nworkflow=embedded-ffmpeg-single-apk\nffmpeg_plugin_commit=%s\nffmpeg_kit_commit=%s\nffmpeg_ndk=%s\ndefault_renderer=opengles2\ndreamdisplays=%s\ndreamdisplays_sha256=%s\ndreamdisplays_decode=software\n' \
+            "$GITHUB_SHA" "$FFMPEG_PLUGIN_COMMIT" "$FFMPEG_KIT_COMMIT" "$FFMPEG_NDK_VERSION" \
+            "$DREAMDISPLAYS_FILENAME" "$DREAMDISPLAYS_SHA256" > artifacts/BUILD_INFO.txt
           git add artifacts
           git -c user.name="github-actions[bot]" \
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-              commit -m "build: signed Kirazium single APK with embedded FFmpeg"
+              commit -m "build: signed Kirazium APK with FFmpeg and cinema stall fix"
           git push --force \
             "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             HEAD:refs/heads/embedded-ffmpeg-single-apk-build
