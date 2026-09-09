@@ -23,11 +23,11 @@ target_compile_options(glfw PRIVATE -Wno-nullability-completeness)
 
 set(SDL_SHARED       ON CACHE BOOL "" FORCE)
 set(SDL_VIDEO        ON CACHE BOOL "" FORCE)
-set(SDL_AUDIO		 ON CACHE BOOL "" FORCE)
+set(SDL_AUDIO         ON CACHE BOOL "" FORCE)
 set(SDL_STATIC       OFF CACHE BOOL "" FORCE)
-set(SDL_CAMERA		 OFF CACHE BOOL "" FORCE)
-set(SDL_TESTS		 OFF CACHE BOOL "" FORCE)
-set(SDL_EXAMPLES	 OFF CACHE BOOL "" FORCE)
+set(SDL_CAMERA       OFF CACHE BOOL "" FORCE)
+set(SDL_TESTS        OFF CACHE BOOL "" FORCE)
+set(SDL_EXAMPLES     OFF CACHE BOOL "" FORCE)
 set(SDL3_MAINPROJECT OFF CACHE BOOL "" FORCE)
 add_subdirectory(sdl)
 target_link_libraries(SDL3-shared PRIVATE mojoexec)
@@ -37,6 +37,7 @@ target_link_libraries(SDL3-shared PRIVATE mojoexec)
 project("MojoLauncher")
 
 add_library(pojavexec SHARED
+        android_art_vm_bridge.c
         affinity.c
         jvm_hooks/emui_iterator_fix_hook.c
         jvm_hooks/java_exec_hooks.c
@@ -58,7 +59,7 @@ add_library(pojavexec_awt SHARED
 )
 
 add_library(awt_headless SHARED 
-	awt_xawt/dummy.c
+        awt_xawt/dummy.c
 )
 
 add_library(awt_xawt SHARED
