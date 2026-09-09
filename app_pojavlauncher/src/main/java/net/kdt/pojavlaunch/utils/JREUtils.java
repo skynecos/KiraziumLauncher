@@ -49,7 +49,7 @@ public class JREUtils {
                     }
 
                     if (p.waitFor() != 0) {
-                        Log.e("jrelog-logcat","Logcat exited with code " + p.exitValue());
+                        Log.e("jrelog-logcat", "Logcat exited with code " + p.exitValue());
                         failTime++;
                         Log.i("jrelog-logcat", (failTime <= 10 ? "Restarting logcat" : "Too many restart fails") + " (attempt " + failTime + "/10");
                         if (failTime <= 10) {
@@ -190,12 +190,14 @@ public class JREUtils {
      */
     public static ArrayList<String> parseJavaArguments(String args){
         ArrayList<String> parsedArguments = new ArrayList<>(0);
-        args = args.trim().replace(" ","");
+        args = args.trim().replace(" ", "");
+        //For each prefixes, we separate args.
         String[] separators = new String[]{"-XX:-","-XX:+", "-XX:","--", "-D", "-X", "-javaagent:", "-verbose"};
         for(String prefix : separators){
             while (true){
                 int start = args.indexOf(prefix);
                 if(start == -1) break;
+                //Get the end of the current argument by checking the nearest separator
                 int end = -1;
                 for(String separator: separators){
                     int tempEnd = args.indexOf(separator, start + prefix.length());
@@ -206,15 +208,19 @@ public class JREUtils {
                     }
                     end = Math.min(end, tempEnd);
                 }
+                //Fallback
                 if(end == -1) end = args.length();
 
+                //Extract it
                 String parsedSubString = args.substring(start, end);
                 args = args.replace(parsedSubString, "");
 
+                //Check if two args aren't bundled together by mistake
                 if(parsedSubString.indexOf('=') == parsedSubString.lastIndexOf('=')) {
                     int arraySize = parsedArguments.size();
                     if(arraySize > 0){
                         String lastString = parsedArguments.get(arraySize - 1);
+                        // Looking for list elements
                         if(lastString.charAt(lastString.length() - 1) == ',' ||
                                 parsedSubString.contains(",")){
                             parsedArguments.set(arraySize - 1, lastString + parsedSubString);
