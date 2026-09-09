@@ -192,7 +192,7 @@ jobs:
           import pathlib, re, subprocess, sys
           root = pathlib.Path(sys.argv[1])
           system = {
-              'libc.so','libm.so','libdl.so','liblog.so','libandroid.so','libmediandk.so',
+              'libc.so','libm.so','libdl.so','liblog.so','libandroid.so','libmediandk.so','libcamera2ndk.so',
               'libz.so','libOpenSLES.so','libaaudio.so','libEGL.so','libGLESv2.so','libGLESv3.so',
               'libjnigraphics.so','libvulkan.so','libstdc++.so','libgcc.so'
           }
