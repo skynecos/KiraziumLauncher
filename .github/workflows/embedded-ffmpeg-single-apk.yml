@@ -48,7 +48,7 @@ jobs:
           grep -F 'installModpackButton' app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/fragments/MainMenuFragment.java >/dev/null
           grep -F 'OpenDocumentWithExtension("mrpack")' app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/fragments/MainMenuFragment.java >/dev/null
           grep -F 'public static String PREF_RENDERER = "opengles2";' app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/prefs/LauncherPreferences.java >/dev/null
-          grep -F 'useLegacyPackaging true' app_pojavlauncher/build.gradle >/dev/null
+          grep -F 'useLegacyPackaging = true' app_pojavlauncher/build.gradle >/dev/null
           test "$(git -C MobileGlues rev-parse HEAD)" = "$EXPECTED_MOBILEGLUES_COMMIT"
 
       - name: Install native FFmpeg build tools and pinned NDKs
