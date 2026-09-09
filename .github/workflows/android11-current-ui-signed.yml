@@ -53,7 +53,7 @@ jobs:
           test -d MobileGlues
           ACTUAL_MG_COMMIT="$(git -C MobileGlues rev-parse HEAD)"
           test "$ACTUAL_MG_COMMIT" = "$EXPECTED_MOBILEGLUES_COMMIT"
-          grep -F 'include '\''':MobileGlues'\''' settings.gradle >/dev/null
+          grep -F "include ':MobileGlues'" settings.gradle >/dev/null
           grep -F 'implementation project(":MobileGlues")' app_pojavlauncher/build.gradle >/dev/null
           grep -F 'opengles_mobileglues' app_pojavlauncher/src/main/res/values/headings_array.xml >/dev/null
           grep -F 'mcl_setting_renderer_mobileglues' app_pojavlauncher/src/main/res/values/headings_array.xml >/dev/null
