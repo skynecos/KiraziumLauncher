@@ -7,7 +7,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Point;
+import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.KeyEvent;
@@ -34,6 +37,7 @@ import net.kdt.pojavlaunch.CustomControlsActivity;
 import git.artdeell.mojo.R;
 
 import net.kdt.pojavlaunch.Architecture;
+import net.kdt.pojavlaunch.PojavApplication;
 import net.kdt.pojavlaunch.Tools;
 import net.kdt.pojavlaunch.contracts.OpenDocumentWithExtension;
 import net.kdt.pojavlaunch.customcontrols.ControlData;
@@ -48,6 +52,7 @@ import net.kdt.pojavlaunch.instances.KiraziumBootstrap;
 import net.kdt.pojavlaunch.prefs.LauncherPreferences;
 import net.kdt.pojavlaunch.progresskeeper.ProgressKeeper;
 import net.kdt.pojavlaunch.utils.FileUtils;
+import net.kdt.pojavlaunch.utils.MrpackInstaller;
 
 import java.io.File;
 import java.io.IOException;
@@ -64,17 +69,26 @@ public class MainMenuFragment extends Fragment {
     private static final String CLASSIC_LAYOUT_PREF = "kiraziumClassicControlLayout";
     private static final String GENERATED_JOYSTICK_LAYOUT = "kirazium_joystick_v1.json";
     private static final String CONTROL_TAG = "KiraziumControls";
+    private static final String MODPACK_TAG = "KiraziumModpack";
 
     private mcVersionSpinner mVersionSpinner;
     private SeekBar mRamSeekBar;
     private TextView mRamValueText;
     private TextView mRamSummaryText;
     private Button mControlModeButton;
+    private Button mModpackButton;
     private int mRamMaxMb;
+    private volatile boolean mModpackInstalling;
+    private final Handler mMainHandler = new Handler(Looper.getMainLooper());
 
     private final ActivityResultLauncher<Object> mModInstallerLauncher =
             registerForActivityResult(new OpenDocumentWithExtension("jar"), (data)->{
                 if(data != null) Tools.launchModInstaller(requireContext(), data);
+            });
+
+    private final ActivityResultLauncher<Object> mModpackInstallerLauncher =
+            registerForActivityResult(new OpenDocumentWithExtension("mrpack"), (data)->{
+                if(data != null) installMrpack(data);
             });
 
     public MainMenuFragment(){
@@ -99,6 +113,7 @@ public class MainMenuFragment extends Fragment {
         mVersionSpinner = view.findViewById(R.id.mc_version_spinner);
 
         installControlModeButton(mTexturePacksButton);
+        installModpackButton(mModsButton);
 
         mNewsButton.setOnClickListener(v -> Tools.openURL(requireActivity(), Tools.URL_HOME));
         mDiscordButton.setOnClickListener(v -> Tools.openURL(requireActivity(), getString(R.string.social_media_invite)));
@@ -111,6 +126,11 @@ public class MainMenuFragment extends Fragment {
         mEditProfileButton.setOnClickListener(v -> mVersionSpinner.openProfileEditor(requireActivity()));
 
         mPlayButton.setOnClickListener(v -> {
+            if (mModpackInstalling) {
+                Toast.makeText(requireContext(), "Modpack yükleniyor. Kurulum tamamlanınca oynayabilirsin.",
+                        Toast.LENGTH_SHORT).show();
+                return;
+            }
             if (ensureSelectedControlMode()) {
                 ExtraCore.setValue(ExtraConstants.LAUNCH_GAME, true);
             }
@@ -164,6 +184,31 @@ public class MainMenuFragment extends Fragment {
 
         refreshControlModeButton();
         mControlModeButton.setOnClickListener(v -> showControlModeDialog());
+    }
+
+    private void installModpackButton(Button modsButton) {
+        View parentView = (View) modsButton.getParent();
+        if (!(parentView instanceof ConstraintLayout)) return;
+
+        ConstraintLayout parent = (ConstraintLayout) parentView;
+        mModpackButton = (Button) LayoutInflater.from(requireContext())
+                .inflate(R.layout.item_modpack_button, parent, false);
+        parent.addView(mModpackButton);
+
+        ConstraintSet constraints = new ConstraintSet();
+        constraints.clone(parent);
+        constraints.connect(R.id.modpack_button, ConstraintSet.START,
+                ConstraintSet.PARENT_ID, ConstraintSet.START);
+        constraints.connect(R.id.modpack_button, ConstraintSet.END,
+                ConstraintSet.PARENT_ID, ConstraintSet.END);
+        constraints.connect(R.id.modpack_button, ConstraintSet.TOP,
+                R.id.mods_button, ConstraintSet.BOTTOM);
+        constraints.clear(R.id.custom_control_button, ConstraintSet.TOP);
+        constraints.connect(R.id.custom_control_button, ConstraintSet.TOP,
+                R.id.modpack_button, ConstraintSet.BOTTOM);
+        constraints.applyTo(parent);
+
+        mModpackButton.setOnClickListener(v -> runModpackInstaller());
     }
 
     private void refreshControlModeButton() {
@@ -473,11 +518,84 @@ public class MainMenuFragment extends Fragment {
         ExtraCore.setValue(ExtraConstants.REFRESH_ACCOUNT_SPINNER, true);
         refreshRamControl();
         refreshControlModeButton();
+        if (mModpackButton != null) {
+            mModpackButton.setEnabled(!mModpackInstalling);
+            mModpackButton.setText(mModpackInstalling ? "Modpack Yükleniyor…" : "Modpack Yükle");
+        }
     }
 
     private void runInstallerWithConfirmation() {
         if (ProgressKeeper.getTaskCount() == 0) {
             mModInstallerLauncher.launch(null);
         } else Toast.makeText(requireContext(), R.string.tasks_ongoing, Toast.LENGTH_LONG).show();
+    }
+
+    private void runModpackInstaller() {
+        if (mModpackInstalling) {
+            Toast.makeText(requireContext(), "Modpack zaten yükleniyor.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (ProgressKeeper.getTaskCount() != 0) {
+            Toast.makeText(requireContext(), R.string.tasks_ongoing, Toast.LENGTH_LONG).show();
+            return;
+        }
+        mModpackInstallerLauncher.launch(null);
+    }
+
+    private void installMrpack(Uri uri) {
+        Instance instance = Instances.loadSelectedInstance();
+        if (instance == null) {
+            Toast.makeText(requireContext(), R.string.no_instance, Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        Context appContext = requireContext().getApplicationContext();
+        File gameDirectory = instance.getGameDirectory();
+        String selectedVersion = instance.versionId;
+        mModpackInstalling = true;
+        if (mModpackButton != null) {
+            mModpackButton.setEnabled(false);
+            mModpackButton.setText("Modpack Yükleniyor…");
+        }
+        Toast.makeText(requireContext(), "Modpack yükleniyor…", Toast.LENGTH_SHORT).show();
+
+        PojavApplication.sExecutorService.execute(() -> {
+            try {
+                MrpackInstaller.Result result = MrpackInstaller.install(
+                        appContext, uri, gameDirectory, selectedVersion);
+                mMainHandler.post(() -> finishMrpackInstall(result, null));
+            } catch (Exception exception) {
+                Log.e(MODPACK_TAG, "Mrpack installation failed", exception);
+                mMainHandler.post(() -> finishMrpackInstall(null, exception));
+            }
+        });
+    }
+
+    private void finishMrpackInstall(@Nullable MrpackInstaller.Result result,
+                                     @Nullable Exception error) {
+        mModpackInstalling = false;
+        if (!isAdded()) return;
+
+        if (mModpackButton != null) {
+            mModpackButton.setEnabled(true);
+            mModpackButton.setText("Modpack Yükle");
+        }
+
+        if (error != null) {
+            new AlertDialog.Builder(requireContext())
+                    .setTitle("Modpack yüklenemedi")
+                    .setMessage(readableError(error))
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+            return;
+        }
+
+        if (result != null) {
+            String version = result.versionId == null || result.versionId.isEmpty()
+                    ? "" : " • " + result.versionId;
+            Toast.makeText(requireContext(),
+                    "Modpack yüklendi: " + result.name + version,
+                    Toast.LENGTH_LONG).show();
+        }
     }
 }
