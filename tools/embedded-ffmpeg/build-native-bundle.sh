@@ -19,6 +19,32 @@ if [[ -z "${ANDROID_SDK_ROOT:-}" ]] || [[ -z "${ANDROID_NDK_ROOT:-}" ]]; then
   exit 1
 fi
 
+# ffmpeg-kit finishes the native FFmpeg build by creating an Android archive with
+# Android Gradle Plugin, which requires Java 17. GitHub's runner may still expose
+# Java 11 as the default JAVA_HOME before the launcher's later setup-java step.
+if [[ -n "${JAVA_HOME_17_X64:-}" && -x "${JAVA_HOME_17_X64}/bin/java" ]]; then
+  export JAVA_HOME="${JAVA_HOME_17_X64}"
+elif [[ -x "/usr/lib/jvm/temurin-17-jdk-amd64/bin/java" ]]; then
+  export JAVA_HOME="/usr/lib/jvm/temurin-17-jdk-amd64"
+else
+  java17_home="$(find /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk -maxdepth 2 -type f -path '*/17*/x64/bin/java' -print 2>/dev/null | head -n 1 || true)"
+  if [[ -n "$java17_home" ]]; then
+    export JAVA_HOME="${java17_home%/bin/java}"
+  fi
+fi
+
+if [[ -z "${JAVA_HOME:-}" || ! -x "${JAVA_HOME}/bin/java" ]]; then
+  echo "Java 17 runtime was not found for ffmpeg-kit Android archive creation."
+  exit 1
+fi
+export PATH="${JAVA_HOME}/bin:${PATH}"
+java_major="$(${JAVA_HOME}/bin/java -version 2>&1 | awk -F'[\".]' '/version/ {print $2; exit}')"
+if [[ -z "$java_major" || "$java_major" -lt 17 ]]; then
+  echo "ffmpeg-kit Android archive requires Java 17+, but JAVA_HOME=${JAVA_HOME} reports Java ${java_major:-unknown}."
+  exit 1
+fi
+echo "Using Java $java_major for ffmpeg-kit Android archive: $JAVA_HOME"
+
 cd "${ffmpeg_kit_dir}"
 
 # Keep this feature set aligned with the already phone-tested Kirazium helper.
