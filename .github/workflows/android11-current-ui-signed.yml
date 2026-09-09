@@ -6,11 +6,21 @@ on:
       - codex/android11-hwdecode-current-ui
     paths:
       - ".github/workflows/android11-current-ui-signed.yml"
+      - ".gitmodules"
+      - "MobileGlues/**"
+      - "build.gradle"
+      - "settings.gradle"
+      - "app_pojavlauncher/build.gradle"
       - "app_pojavlauncher/src/main/jni/android_art_vm_bridge.c"
       - "app_pojavlauncher/src/main/jni/CMakeLists.txt"
       - "app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/fragments/MainMenuFragment.java"
       - "app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/utils/MrpackInstaller.java"
+      - "app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/utils/JREUtils.java"
+      - "app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/utils/RendererCompatUtil.java"
+      - "app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/prefs/LauncherPreferences.java"
       - "app_pojavlauncher/src/main/res/layout/item_modpack_button.xml"
+      - "app_pojavlauncher/src/main/res/values/headings_array.xml"
+      - "app_pojavlauncher/src/main/res/values/mobileglues_renderer.xml"
   workflow_dispatch:
 
 permissions:
@@ -22,6 +32,7 @@ jobs:
     env:
       EXPECTED_KIRAZIUM_CERT_SHA256: "206d0a623973d12b6f50f147d6e9417c164f3b66a30ce1f418c34940e94bb755"
       EXPECTED_KIRAZIUM_KEYSTORE_SHA256: "c28442da2dbbc2b49df476077f5959b7970c3116b71e7929835dec39a9df93f5"
+      EXPECTED_MOBILEGLUES_COMMIT: "f56af31d3e490d95808b3adc4ace20234249a37a"
     steps:
       - name: Checkout current launcher baseline
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -35,6 +46,32 @@ jobs:
           test -s app_pojavlauncher/src/main/res/layout/item_modpack_button.xml
           grep -F 'installModpackButton' app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/fragments/MainMenuFragment.java >/dev/null
           grep -F 'OpenDocumentWithExtension("mrpack")' app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/fragments/MainMenuFragment.java >/dev/null
+
+      - name: Verify MobileGlues source and launcher wiring
+        run: |
+          set -euo pipefail
+          test -d MobileGlues
+          ACTUAL_MG_COMMIT="$(git -C MobileGlues rev-parse HEAD)"
+          test "$ACTUAL_MG_COMMIT" = "$EXPECTED_MOBILEGLUES_COMMIT"
+          grep -F 'include '\''':MobileGlues'\''' settings.gradle >/dev/null
+          grep -F 'implementation project(":MobileGlues")' app_pojavlauncher/build.gradle >/dev/null
+          grep -F 'opengles_mobileglues' app_pojavlauncher/src/main/res/values/headings_array.xml >/dev/null
+          grep -F 'mcl_setting_renderer_mobileglues' app_pojavlauncher/src/main/res/values/headings_array.xml >/dev/null
+          grep -F 'case "opengles_mobileglues"' app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/utils/JREUtils.java >/dev/null
+          grep -F 'renderLibrary = "libmobileglues.so"' app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/utils/JREUtils.java >/dev/null
+          grep -F 'envMap.put("MG_DIR_PATH"' app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/utils/JREUtils.java >/dev/null
+          grep -F 'libmobileglues.so' app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/utils/RendererCompatUtil.java >/dev/null
+          grep -F 'rendererId.contains("mobileglues")' app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/utils/RendererCompatUtil.java >/dev/null
+
+      - name: Verify MobileGlues is not the default renderer
+        run: |
+          set -euo pipefail
+          grep -F 'public static String PREF_RENDERER = "opengles2";' app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/prefs/LauncherPreferences.java >/dev/null
+          grep -F 'DEFAULT_PREF.getString("renderer", "opengles2")' app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/prefs/LauncherPreferences.java >/dev/null
+          if grep -F 'PREF_RENDERER = "opengles_mobileglues"' app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/prefs/LauncherPreferences.java; then
+            echo "::error::MobileGlues must remain opt-in, not selected by default."
+            exit 1
+          fi
 
       - name: Get LTW renderer
         uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11
@@ -60,17 +97,21 @@ jobs:
           chmod +x gradlew
           ./gradlew :app_pojavlauncher:assembleFullRelease --stacktrace
 
-      - name: Verify ART JavaVM bridge
+      - name: Verify ART bridge and packaged MobileGlues renderer
         run: |
           set -euo pipefail
           APK="$(find app_pojavlauncher/build/outputs/apk/full/release -type f -name '*.apk' | head -n 1)"
           test -s "$APK"
           mkdir -p verify unsigned out
           unzip -p "$APK" lib/arm64-v8a/libpojavexec.so > verify/libpojavexec.so
+          unzip -p "$APK" lib/arm64-v8a/libmobileglues.so > verify/libmobileglues.so
           test -s verify/libpojavexec.so
+          test -s verify/libmobileglues.so
           readelf -Ws verify/libpojavexec.so | grep -F 'kirazium_get_android_art_vm' >/dev/null
           strings verify/libpojavexec.so | grep -F 'KIRAZIUM_ANDROID_ART_VM' >/dev/null
           strings verify/libpojavexec.so | grep -F 'Published Android ART JavaVM for DreamDisplays MediaCodec' >/dev/null
+          file verify/libmobileglues.so | grep -F 'ARM aarch64' >/dev/null
+          unzip -Z1 "$APK" | grep -F 'lib/arm64-v8a/libmobileglues.so' >/dev/null
           cp "$APK" unsigned/KiraziumLauncher-Android11-CurrentUI-unsigned.apk
 
       - name: Prepare and verify Kirazium signing key
@@ -108,15 +149,15 @@ jobs:
             --ks-key-alias kirazium \
             --ks-pass env:KIRAZIUM_SIGNING_PASSWORD \
             --key-pass env:KIRAZIUM_SIGNING_PASSWORD \
-            --out out/KiraziumLauncher-Android11-HWDecode-CurrentUI-SIGNED.apk \
+            --out out/KiraziumLauncher-Android11-HWDecode-CurrentUI-MobileGlues-SIGNED.apk \
             unsigned/KiraziumLauncher-Android11-CurrentUI-unsigned.apk
-          VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs out/KiraziumLauncher-Android11-HWDecode-CurrentUI-SIGNED.apk)"
+          VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs out/KiraziumLauncher-Android11-HWDecode-CurrentUI-MobileGlues-SIGNED.apk)"
           printf '%s\n' "$VERIFY_OUTPUT"
           SIGNED_CERT_SHA256="$(printf '%s\n' "$VERIFY_OUTPUT" | awk -F': ' '/certificate SHA-256 digest/{value=$NF; gsub(":", "", value); print tolower(value); exit}')"
           test "$SIGNED_CERT_SHA256" = "$EXPECTED_KIRAZIUM_CERT_SHA256"
-          sha256sum out/KiraziumLauncher-Android11-HWDecode-CurrentUI-SIGNED.apk > out/KiraziumLauncher-Android11-HWDecode-CurrentUI-SIGNED.apk.sha256
+          sha256sum out/KiraziumLauncher-Android11-HWDecode-CurrentUI-MobileGlues-SIGNED.apk > out/KiraziumLauncher-Android11-HWDecode-CurrentUI-MobileGlues-SIGNED.apk.sha256
 
-      - name: Publish signed current-UI Android11 launcher
+      - name: Publish signed current-UI Android11 MobileGlues launcher
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -131,11 +172,11 @@ jobs:
           git rm -rf . >/dev/null 2>&1 || true
           mkdir -p artifacts
           cp "$staged"/* artifacts/
-          printf 'source_commit=%s\nsource_branch=codex/android11-hwdecode-current-ui\nworkflow=android11-current-ui-signed\n' "$GITHUB_SHA" > artifacts/BUILD_INFO.txt
+          printf 'source_commit=%s\nsource_branch=codex/android11-hwdecode-current-ui\nworkflow=android11-current-ui-signed\nmobileglues_commit=%s\ndefault_renderer=opengles2\n' "$GITHUB_SHA" "$EXPECTED_MOBILEGLUES_COMMIT" > artifacts/BUILD_INFO.txt
           git add artifacts
           git -c user.name="github-actions[bot]" \
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-              commit -m "build: signed Android11 hardware decode on current launcher UI"
+              commit -m "build: signed Android11 current UI with opt-in MobileGlues"
           git push --force \
             "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             HEAD:refs/heads/android11-hwdecode-current-ui-signed-build
