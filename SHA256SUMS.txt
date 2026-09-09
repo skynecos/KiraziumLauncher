@@ -1,0 +1,1 @@
+e5affa33e165cd7d4b89132732a9ad744695e99a9fa7104e1670ef6413023239  test-output/KiraziumLauncher-MobileGlues-Test.apk

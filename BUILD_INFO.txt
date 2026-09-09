@@ -1,0 +1,3 @@
+source_commit=81f0bed76927b7feb9116392cb187c52d2c01ffa
+branch=codex/mobileglues-renderer
+variant=fullDebug
