@@ -2,6 +2,14 @@ package net.kdt.pojavlaunch.utils;
 
 import android.content.Context;
 import android.net.Uri;
+import android.view.View;
+
+import com.kdt.mcgui.mcVersionSpinner;
+
+import net.kdt.pojavlaunch.instances.Instance;
+import net.kdt.pojavlaunch.instances.Instances;
+import net.kdt.pojavlaunch.lifecycle.ContextExecutor;
+import net.kdt.pojavlaunch.modloaders.FabriclikeUtils;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -26,10 +34,12 @@ import java.util.Locale;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
-/** Installs Modrinth .mrpack files into an existing Minecraft game directory. */
+import git.artdeell.mojo.R;
+
+/** Installs a Modrinth .mrpack as a separate launcher profile. */
 public final class MrpackInstaller {
     private static final String INDEX_NAME = "modrinth.index.json";
-    private static final String USER_AGENT = "KiraziumLauncher/1.0";
+    private static final String USER_AGENT = "KiraziumLauncher/2.0";
     private static final int BUFFER_SIZE = 64 * 1024;
     private static final int CONNECT_TIMEOUT_MS = 15_000;
     private static final int READ_TIMEOUT_MS = 60_000;
@@ -51,21 +61,35 @@ public final class MrpackInstaller {
         }
     }
 
-    public static Result install(Context context, Uri source, File gameDirectory,
-                                 String currentVersionId) throws IOException {
+    private static final class PackMetadata {
+        final String name;
+        final String packVersion;
+        final String minecraftVersion;
+        final String fabricLoaderVersion;
+
+        PackMetadata(String name, String packVersion, String minecraftVersion,
+                     String fabricLoaderVersion) {
+            this.name = name;
+            this.packVersion = packVersion;
+            this.minecraftVersion = minecraftVersion;
+            this.fabricLoaderVersion = fabricLoaderVersion;
+        }
+    }
+
+    /**
+     * The last two arguments are retained for source compatibility with the existing main menu.
+     * A .mrpack is now always installed into its own isolated instance instead of the selected
+     * profile's game directory.
+     */
+    public static Result install(Context context, Uri source, File ignoredGameDirectory,
+                                 String ignoredCurrentVersionId) throws IOException {
         if (context == null) throw new IOException("Uygulama bağlamı bulunamadı");
         if (source == null) throw new IOException("Modpack dosyası seçilmedi");
-        if (gameDirectory == null) throw new IOException("Oyun klasörü bulunamadı");
 
-        FileUtils.ensureDirectory(gameDirectory);
         File cachedPack = File.createTempFile("kirazium-modpack-", ".mrpack", context.getCacheDir());
+        Instance createdInstance = null;
         try {
-            try (InputStream input = context.getContentResolver().openInputStream(source)) {
-                if (input == null) throw new IOException("Seçilen modpack dosyası açılamadı");
-                try (OutputStream output = new BufferedOutputStream(new FileOutputStream(cachedPack))) {
-                    copy(input, output);
-                }
-            }
+            copyUriToFile(context, source, cachedPack);
 
             try (ZipFile zip = new ZipFile(cachedPack)) {
                 ZipEntry indexEntry = zip.getEntry(INDEX_NAME);
@@ -74,22 +98,59 @@ public final class MrpackInstaller {
                 }
 
                 JSONObject index = parseJson(readEntry(zip, indexEntry), "modrinth.index.json bozuk");
-                validateIndex(index, currentVersionId);
+                PackMetadata metadata = validateAndReadMetadata(index);
+                String profileVersionId = installRequiredLoader(metadata);
+
+                final String instanceName = metadata.name;
+                final String instanceVersionId = profileVersionId;
+                final boolean needsJava25 = metadata.minecraftVersion.startsWith("26.");
+
+                createdInstance = Instances.createInstance(instance -> {
+                    instance.sharedData = false;
+                    instance.name = instanceName;
+                    instance.icon = "fabric";
+                    instance.versionId = instanceVersionId;
+                    if (needsJava25) instance.selectedRuntime = "Internal-25";
+                }, "modpack");
+
+                File gameDirectory = createdInstance.getGameDirectory();
+                FileUtils.ensureDirectory(gameDirectory);
 
                 int downloaded = installManifestFiles(context, index, gameDirectory);
                 int extracted = extractOverrides(zip, "overrides/", gameDirectory);
                 extracted += extractOverrides(zip, "client-overrides/", gameDirectory);
 
-                String name = index.optString("name", "Modpack");
-                String versionId = index.optString("versionId", "");
-                return new Result(name, versionId, downloaded, extracted);
+                Instances.setSelectedInstance(createdInstance);
+                refreshProfileSpinner();
+
+                return new Result(metadata.name, metadata.packVersion, downloaded, extracted);
             }
+        } catch (Exception exception) {
+            if (createdInstance != null) {
+                try {
+                    Instances.removeInstance(createdInstance);
+                } catch (IOException cleanupError) {
+                    exception.addSuppressed(cleanupError);
+                }
+            }
+            if (exception instanceof IOException) throw (IOException) exception;
+            throw new IOException("Modpack profili oluşturulamadı", exception);
         } finally {
             if (cachedPack.exists() && !cachedPack.delete()) cachedPack.deleteOnExit();
         }
     }
 
-    private static void validateIndex(JSONObject index, String currentVersionId) throws IOException {
+    private static void copyUriToFile(Context context, Uri source, File destination)
+            throws IOException {
+        try (InputStream input = context.getContentResolver().openInputStream(source)) {
+            if (input == null) throw new IOException("Seçilen modpack dosyası açılamadı");
+            try (OutputStream output = new BufferedOutputStream(new FileOutputStream(destination))) {
+                copy(input, output);
+            }
+        }
+    }
+
+    private static PackMetadata validateAndReadMetadata(JSONObject index) throws IOException {
         int formatVersion = index.optInt("formatVersion", -1);
         if (formatVersion != 1) {
             throw new IOException("Desteklenmeyen .mrpack formatı: " + formatVersion);
@@ -99,13 +160,8 @@ public final class MrpackInstaller {
         }
 
         JSONObject dependencies = index.optJSONObject("dependencies");
-        if (dependencies == null) return;
-
-        String minecraft = dependencies.optString("minecraft", "");
-        if (!minecraft.isEmpty() && currentVersionId != null && !currentVersionId.isEmpty()
-                && !currentVersionId.contains(minecraft)) {
-            throw new IOException("Modpack Minecraft " + minecraft
-                    + " istiyor. Seçili profil: " + currentVersionId);
+        if (dependencies == null) {
+            throw new IOException("Modpack sürüm bilgileri eksik");
         }
 
         if (dependencies.has("forge") || dependencies.has("neoforge")
@@ -113,13 +169,43 @@ public final class MrpackInstaller {
             throw new IOException("Bu modpack'in loader'ı henüz desteklenmiyor. Şimdilik Fabric .mrpack kullanın.");
         }
 
-        if (dependencies.has("fabric-loader") && currentVersionId != null
-                && !currentVersionId.isEmpty()) {
-            String lower = currentVersionId.toLowerCase(Locale.ROOT);
-            if (!lower.contains("fabric")) {
-                throw new IOException("Bu modpack Fabric istiyor ancak seçili profil Fabric değil");
-            }
+        String minecraft = dependencies.optString("minecraft", "").trim();
+        if (minecraft.isEmpty()) {
+            throw new IOException("Modpack Minecraft sürümü belirtmiyor");
         }
+
+        String fabricLoader = dependencies.optString("fabric-loader", "").trim();
+        String name = index.optString("name", "Modpack").trim();
+        if (name.isEmpty()) name = "Modpack";
+        if (name.length() > 80) name = name.substring(0, 80).trim();
+
+        return new PackMetadata(
+                name,
+                index.optString("versionId", "").trim(),
+                minecraft,
+                fabricLoader
+        );
+    }
+
+    private static String installRequiredLoader(PackMetadata metadata) throws IOException {
+        if (metadata.fabricLoaderVersion.isEmpty()) {
+            return metadata.minecraftVersion;
+        }
+        String installed = FabriclikeUtils.FABRIC_UTILS.install(
+                metadata.minecraftVersion, metadata.fabricLoaderVersion);
+        if (installed == null || installed.trim().isEmpty()) {
+            throw new IOException("Fabric profili oluşturulamadı");
+        }
+        return installed;
+    }
+
+    private static void refreshProfileSpinner() {
+        ContextExecutor.executeActivity(activity -> {
+            View view = activity.findViewById(R.id.mc_version_spinner);
+            if (view instanceof mcVersionSpinner) {
+                ((mcVersionSpinner) view).reloadProfiles();
+            }
+        });
     }
 
     private static int installManifestFiles(Context context, JSONObject index, File gameDirectory)
