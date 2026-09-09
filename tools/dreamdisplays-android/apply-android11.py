@@ -62,10 +62,7 @@ pub unsafe extern "system" fn JNI_OnLoad(vm: *mut c_void, _reserved: *mut c_void
     if art_vm.is_some() {
         log::info!("Registered Kirazium Android ART VM with FFmpeg MediaCodec.");
     } else {
-        log::warn!(
-            "Kirazium Android ART VM bridge was unavailable; registered embedded JVM fallback. "
-            "Hardware MediaCodec may be unavailable."
-        );
+        log::warn!("Kirazium Android ART VM bridge was unavailable; registered embedded JVM fallback. Hardware MediaCodec may be unavailable.");
     }
     JNI_VERSION_1_6
 }
