@@ -1,0 +1,3 @@
+source_commit=234504b9a905f7d69801f95c7bbca8c93eff97e4
+source_branch=codex/android11-hwdecode
+workflow=android11-signed-launcher
