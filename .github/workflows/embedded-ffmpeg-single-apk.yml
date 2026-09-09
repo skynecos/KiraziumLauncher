@@ -1,0 +1,304 @@
+name: Kirazium Embedded FFmpeg Single APK
+
+on:
+  push:
+    branches:
+      - codex/embedded-ffmpeg-single-apk
+    paths:
+      - ".github/workflows/embedded-ffmpeg-single-apk.yml"
+      - "tools/embedded-ffmpeg/**"
+      - ".gitmodules"
+      - "MobileGlues/**"
+      - "build.gradle"
+      - "settings.gradle"
+      - "app_pojavlauncher/build.gradle"
+      - "app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/utils/JREUtils.java"
+      - "app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/utils/MrpackInstaller.java"
+      - "app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/fragments/MainMenuFragment.java"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FFMPEG_PLUGIN_COMMIT: "5422b575f2402810ba9bfdc07c3f78bab98a15a2"
+  FFMPEG_KIT_COMMIT: "97760a31349439243487a99adbcde09e9dabe458"
+  FFMPEG_NDK_VERSION: "25.1.8937393"
+  LAUNCHER_NDK_VERSION: "29.0.14206865"
+  EXPECTED_KIRAZIUM_CERT_SHA256: "206d0a623973d12b6f50f147d6e9417c164f3b66a30ce1f418c34940e94bb755"
+  EXPECTED_KIRAZIUM_KEYSTORE_SHA256: "c28442da2dbbc2b49df476077f5959b7970c3116b71e7929835dec39a9df93f5"
+  EXPECTED_MOBILEGLUES_COMMIT: "f56af31d3e490d95808b3adc4ace20234249a37a"
+
+jobs:
+  build-single-apk:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout current Kirazium launcher
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          submodules: recursive
+
+      - name: Verify current launcher baseline
+        run: |
+          set -euo pipefail
+          test -s app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/utils/MrpackInstaller.java
+          test -s app_pojavlauncher/src/main/res/layout/item_modpack_button.xml
+          grep -F 'installModpackButton' app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/fragments/MainMenuFragment.java >/dev/null
+          grep -F 'OpenDocumentWithExtension("mrpack")' app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/fragments/MainMenuFragment.java >/dev/null
+          grep -F 'public static String PREF_RENDERER = "opengles2";' app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/prefs/LauncherPreferences.java >/dev/null
+          grep -F 'useLegacyPackaging true' app_pojavlauncher/build.gradle >/dev/null
+          test "$(git -C MobileGlues rev-parse HEAD)" = "$EXPECTED_MOBILEGLUES_COMMIT"
+
+      - name: Install native FFmpeg build tools and pinned NDKs
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            autogen autoconf automake autopoint build-essential cmake gettext \
+            gperf groff gtk-doc-tools libtasn1-bin libtool libtool-bin nasm pkg-config yasm
+
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          test -n "$SDK_ROOT"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -perm -u+x | head -n 1 || true)"
+          fi
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" \
+            "ndk;${FFMPEG_NDK_VERSION}" \
+            "ndk;${LAUNCHER_NDK_VERSION}" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "FFMPEG_NDK_ROOT=$SDK_ROOT/ndk/${FFMPEG_NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Fetch exact phone-tested FFmpeg helper sources
+        run: |
+          set -euo pipefail
+          PLUGIN_DIR="$RUNNER_TEMP/FFmpegPlugin"
+          git init "$PLUGIN_DIR"
+          git -C "$PLUGIN_DIR" remote add origin https://github.com/MojoLauncher/FFmpegPlugin.git
+          git -C "$PLUGIN_DIR" fetch --depth 1 origin "$FFMPEG_PLUGIN_COMMIT"
+          git -C "$PLUGIN_DIR" checkout --detach FETCH_HEAD
+
+          git init "$PLUGIN_DIR/ffmpeg-kit"
+          git -C "$PLUGIN_DIR/ffmpeg-kit" remote add origin https://github.com/arthenica/ffmpeg-kit.git
+          git -C "$PLUGIN_DIR/ffmpeg-kit" fetch --depth 1 origin "$FFMPEG_KIT_COMMIT"
+          git -C "$PLUGIN_DIR/ffmpeg-kit" checkout --detach FETCH_HEAD
+          git -C "$PLUGIN_DIR/ffmpeg-kit" apply "$PLUGIN_DIR/scripts/ffmpeg_enable_executable.diff"
+
+      - name: Build embedded arm64 FFmpeg bundle
+        run: |
+          set -euo pipefail
+          chmod +x tools/embedded-ffmpeg/build-native-bundle.sh
+          BUNDLE="$RUNNER_TEMP/kirazium-ffmpeg/arm64-v8a"
+          ANDROID_NDK_ROOT="$FFMPEG_NDK_ROOT" \
+            tools/embedded-ffmpeg/build-native-bundle.sh "$RUNNER_TEMP/FFmpegPlugin" "$BUNDLE"
+
+          test -s "$BUNDLE/libffmpeg.so"
+          test -s "$BUNDLE/libavformat.so"
+          test -s "$BUNDLE/libavcodec.so"
+          strings "$BUNDLE/libavformat.so" | grep -q -- '--enable-gnutls'
+          strings "$BUNDLE/libavcodec.so" | grep -q -- '--enable-mediacodec'
+          strings "$BUNDLE/libavcodec.so" | grep -q -- '--enable-jni'
+          readelf -Ws "$BUNDLE/libavcodec.so" | grep -q 'av_jni_set_java_vm'
+          readelf -d "$BUNDLE/libffmpeg.so" | grep -q 'libavdevice.so'
+
+      - name: Embed bundle and patch launcher to prefer itself
+        run: |
+          set -euo pipefail
+          BUNDLE="$RUNNER_TEMP/kirazium-ffmpeg/arm64-v8a"
+          JNI_DIR="app_pojavlauncher/src/main/jniLibs/arm64-v8a"
+          mkdir -p "$JNI_DIR"
+
+          for lib in "$BUNDLE"/*.so; do
+            name="$(basename "$lib")"
+            if [ -e "$JNI_DIR/$name" ]; then
+              echo "::error::Refusing to overwrite existing launcher native library: $name"
+              exit 1
+            fi
+            cp "$lib" "$JNI_DIR/$name"
+          done
+
+          python3 tools/embedded-ffmpeg/patch-launcher.py
+          grep -F 'new File(ctx.getApplicationInfo().nativeLibraryDir, "libffmpeg.so")' \
+            app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/utils/JREUtils.java >/dev/null
+          grep -F 'Using embedded Kirazium FFmpeg:' \
+            app_pojavlauncher/src/main/java/net/kdt/pojavlaunch/utils/JREUtils.java >/dev/null
+
+          echo "Embedded JNI bundle:"
+          find "$JNI_DIR" -maxdepth 1 -type f -name '*.so' -printf '%f\n' | sort
+
+      - name: Get LTW renderer
+        uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11
+        with:
+          repo: MojoLauncher/LTW
+          workflow: android.yml
+          workflow_conclusion: success
+          commit: 3aca75d9f3f05afd0b02a3d8f686084d968fa200
+          name: output-aar
+          path: app_pojavlauncher/libs
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Build single Kirazium launcher APK
+        env:
+          CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          unset ANDROID_NDK_ROOT
+          ./gradlew :app_pojavlauncher:assembleFullRelease --stacktrace
+
+      - name: Verify embedded FFmpeg is complete inside launcher APK
+        run: |
+          set -euo pipefail
+          APK="$(find app_pojavlauncher/build/outputs/apk/full/release -type f -name '*.apk' | head -n 1)"
+          test -s "$APK"
+          mkdir -p verify/ffmpeg unsigned out
+
+          for name in libffmpeg.so libffprobe.so libavformat.so libavcodec.so libavdevice.so libavutil.so; do
+            unzip -p "$APK" "lib/arm64-v8a/$name" > "verify/ffmpeg/$name"
+            test -s "verify/ffmpeg/$name"
+          done
+
+          unzip -Z1 "$APK" | grep -F 'lib/arm64-v8a/libffmpeg.so' >/dev/null
+          readelf -d verify/ffmpeg/libffmpeg.so | grep -q 'libavdevice.so'
+          strings verify/ffmpeg/libavformat.so | grep -q -- '--enable-gnutls'
+          strings verify/ffmpeg/libavcodec.so | grep -q -- '--enable-jni'
+
+          # Ensure the embedded-first marker made it into compiled dex, not only the source tree.
+          found_marker=0
+          while IFS= read -r dex; do
+            if unzip -p "$APK" "$dex" | strings | grep -Fq 'Using embedded Kirazium FFmpeg:'; then
+              found_marker=1
+              break
+            fi
+          done < <(unzip -Z1 "$APK" | grep -E '^classes([0-9]+)?\.dex$')
+          test "$found_marker" = 1
+
+          # Verify every non-platform DT_NEEDED edge in the FFmpeg bundle is packaged beside it.
+          VERIFY_ALL="$RUNNER_TEMP/verify-all-libs"
+          mkdir -p "$VERIFY_ALL"
+          unzip -q "$APK" 'lib/arm64-v8a/*.so' -d "$VERIFY_ALL"
+          python3 - "$VERIFY_ALL/lib/arm64-v8a" <<'PY'
+          import pathlib, re, subprocess, sys
+          root = pathlib.Path(sys.argv[1])
+          system = {
+              'libc.so','libm.so','libdl.so','liblog.so','libandroid.so','libmediandk.so',
+              'libz.so','libOpenSLES.so','libaaudio.so','libEGL.so','libGLESv2.so','libGLESv3.so',
+              'libjnigraphics.so','libvulkan.so','libstdc++.so','libgcc.so'
+          }
+          ff = [p for p in root.glob('*.so') if p.name.startswith(('libff','libav','libsw','libpostproc','libgnutls','libnettle','libhogweed','libgmp','libiconv','libcharset','libtasn1','libunistring','libidn2'))]
+          missing = []
+          for p in ff:
+              out = subprocess.check_output(['readelf','-d',str(p)], text=True, errors='replace')
+              for dep in re.findall(r'\(NEEDED\).*?\[(.*?)\]', out):
+                  if dep not in system and not (root / dep).is_file():
+                      missing.append((p.name, dep))
+          if missing:
+              for src, dep in missing:
+                  print(f'::error::{src} needs missing packaged dependency {dep}')
+              raise SystemExit(1)
+          print(f'Validated dependency closure for {len(ff)} embedded FFmpeg-family libraries.')
+          PY
+
+          unzip -p "$APK" lib/arm64-v8a/libpojavexec.so > verify/libpojavexec.so
+          unzip -p "$APK" lib/arm64-v8a/libmobileglues.so > verify/libmobileglues.so
+          readelf -Ws verify/libpojavexec.so | grep -F 'kirazium_get_android_art_vm' >/dev/null
+          file verify/libmobileglues.so | grep -F 'ARM aarch64' >/dev/null
+
+          cp "$APK" unsigned/KiraziumLauncher-SingleAPK-EmbeddedFFmpeg-unsigned.apk
+
+      - name: Prepare and verify Kirazium signing key
+        env:
+          KIRAZIUM_KEYSTORE_B64: ${{ secrets.KIRAZIUM_KEYSTORE_B64 }}
+          KIRAZIUM_KEYSTORE_PASSWORD: ${{ secrets.KIRAZIUM_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "${KIRAZIUM_KEYSTORE_B64:-}"
+          test -n "${KIRAZIUM_KEYSTORE_PASSWORD:-}"
+          SIGNING_DIR="$RUNNER_TEMP/kirazium-signing"
+          mkdir -p "$SIGNING_DIR"
+          chmod 700 "$SIGNING_DIR"
+          printf '%s' "$KIRAZIUM_KEYSTORE_B64" | tr -d '[:space:]' | base64 --decode > "$SIGNING_DIR/kirazium-release.jks"
+          chmod 600 "$SIGNING_DIR/kirazium-release.jks"
+          test "$(sha256sum "$SIGNING_DIR/kirazium-release.jks" | awk '{print $1}')" = "$EXPECTED_KIRAZIUM_KEYSTORE_SHA256"
+          SIGNING_PASSWORD="$(printf '%s' "$KIRAZIUM_KEYSTORE_PASSWORD" | tr -d '\r\n')"
+          KEYTOOL_OUTPUT="$(keytool -list -v -keystore "$SIGNING_DIR/kirazium-release.jks" -storepass "$SIGNING_PASSWORD" -alias kirazium 2>/dev/null)"
+          ACTUAL_CERT_SHA256="$(printf '%s\n' "$KEYTOOL_OUTPUT" | awk -F': ' '/SHA256:/{gsub(":", "", $2); print tolower($2); exit}')"
+          test "$ACTUAL_CERT_SHA256" = "$EXPECTED_KIRAZIUM_CERT_SHA256"
+
+      - name: Sign and verify single APK
+        env:
+          KIRAZIUM_KEYSTORE_PASSWORD: ${{ secrets.KIRAZIUM_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          APKSIGNER="$(find "$SDK_ROOT/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          SIGNING_PASSWORD="$(printf '%s' "$KIRAZIUM_KEYSTORE_PASSWORD" | tr -d '\r\n')"
+          export KIRAZIUM_SIGNING_PASSWORD="$SIGNING_PASSWORD"
+          "$APKSIGNER" sign \
+            --ks "$RUNNER_TEMP/kirazium-signing/kirazium-release.jks" \
+            --ks-key-alias kirazium \
+            --ks-pass env:KIRAZIUM_SIGNING_PASSWORD \
+            --key-pass env:KIRAZIUM_SIGNING_PASSWORD \
+            --out out/KiraziumLauncher-SingleAPK-EmbeddedFFmpeg-SIGNED.apk \
+            unsigned/KiraziumLauncher-SingleAPK-EmbeddedFFmpeg-unsigned.apk
+          VERIFY_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs out/KiraziumLauncher-SingleAPK-EmbeddedFFmpeg-SIGNED.apk)"
+          printf '%s\n' "$VERIFY_OUTPUT"
+          SIGNED_CERT_SHA256="$(printf '%s\n' "$VERIFY_OUTPUT" | awk -F': ' '/certificate SHA-256 digest/{value=$NF; gsub(":", "", value); print tolower(value); exit}')"
+          test "$SIGNED_CERT_SHA256" = "$EXPECTED_KIRAZIUM_CERT_SHA256"
+          sha256sum out/KiraziumLauncher-SingleAPK-EmbeddedFFmpeg-SIGNED.apk > out/KiraziumLauncher-SingleAPK-EmbeddedFFmpeg-SIGNED.apk.sha256
+
+      - name: Publish signed single-APK build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          staged="$RUNNER_TEMP/embedded-ffmpeg-stage"
+          output="$RUNNER_TEMP/embedded-ffmpeg-output"
+          mkdir -p "$staged"
+          cp out/* "$staged/"
+          git worktree add --detach "$output" "$GITHUB_SHA"
+          cd "$output"
+          git switch --orphan embedded-ffmpeg-single-apk-build
+          git rm -rf . >/dev/null 2>&1 || true
+          mkdir -p artifacts
+          cp "$staged"/* artifacts/
+          printf 'source_commit=%s\nsource_branch=codex/embedded-ffmpeg-single-apk\nworkflow=embedded-ffmpeg-single-apk\nffmpeg_plugin_commit=%s\nffmpeg_kit_commit=%s\nffmpeg_ndk=%s\ndefault_renderer=opengles2\n' \
+            "$GITHUB_SHA" "$FFMPEG_PLUGIN_COMMIT" "$FFMPEG_KIT_COMMIT" "$FFMPEG_NDK_VERSION" > artifacts/BUILD_INFO.txt
+          git add artifacts
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "build: signed Kirazium single APK with embedded FFmpeg"
+          git push --force \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:refs/heads/embedded-ffmpeg-single-apk-build
+
+      - name: Preserve FFmpeg build log on failure
+        if: failure()
+        run: |
+          mkdir -p diagnostics
+          cp "$RUNNER_TEMP/FFmpegPlugin/ffmpeg-kit/build.log" diagnostics/ffmpeg-build.log || true
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Kirazium-Embedded-FFmpeg-diagnostics
+          path: diagnostics/*
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Remove signing material
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/kirazium-signing"
