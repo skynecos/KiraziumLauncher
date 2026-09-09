@@ -1,0 +1,87 @@
+name: MobileGlues Test APK
+
+on:
+  push:
+    branches:
+      - codex/mobileglues-renderer
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build_test_apk:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Get LTW renderer
+        uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11 # v6
+        with:
+          repo: MojoLauncher/LTW
+          workflow: android.yml
+          workflow_conclusion: success
+          commit: 3aca75d9f3f05afd0b02a3d8f686084d968fa200
+          name: output-aar
+          path: app_pojavlauncher/libs
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+
+      - name: Build signed debug APK
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew :app_pojavlauncher:assembleFullDebug --stacktrace
+
+      - name: Verify APK is signed and prepare output
+        run: |
+          set -euo pipefail
+          mapfile -t APKS < <(find app_pojavlauncher/build/outputs/apk/full/debug -maxdepth 1 -type f -name '*.apk' -print)
+          if [ "${#APKS[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one fullDebug APK, found ${#APKS[@]}."
+            printf '%s\n' "${APKS[@]:-}"
+            exit 1
+          fi
+          APK="${APKS[0]}"
+          test -s "$APK"
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          APKSIGNER="$(find "$SDK_ROOT/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          mkdir -p test-output
+          cp "$APK" test-output/KiraziumLauncher-MobileGlues-Test.apk
+          sha256sum test-output/KiraziumLauncher-MobileGlues-Test.apk > test-output/SHA256SUMS.txt
+          printf 'source_commit=%s\nbranch=codex/mobileglues-renderer\nvariant=fullDebug\n' "$GITHUB_SHA" > test-output/BUILD_INFO.txt
+
+      - name: Publish test APK to isolated branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          staged="${RUNNER_TEMP}/kirazium-mobileglues-test-stage"
+          output="${RUNNER_TEMP}/kirazium-mobileglues-test-output"
+          mkdir -p "$staged"
+          cp test-output/* "$staged/"
+
+          git worktree add --detach "$output" "$GITHUB_SHA"
+          cd "$output"
+          git switch --orphan kirazium-mobileglues-test
+          git rm -rf . >/dev/null 2>&1 || true
+          cp "$staged"/* .
+          git add KiraziumLauncher-MobileGlues-Test.apk SHA256SUMS.txt BUILD_INFO.txt
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "build: MobileGlues installable test APK"
+          git push --force \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:refs/heads/kirazium-mobileglues-test
