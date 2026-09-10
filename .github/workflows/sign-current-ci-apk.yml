@@ -42,10 +42,14 @@ jobs:
             echo "::error::Expected CI APK source $EXPECTED_SOURCE_COMMIT, got $actual"
             exit 1
           fi
-          (cd "$stage/artifacts" && sha256sum -c SHA256SUMS.txt)
-          test -s "$stage/artifacts/KiraziumLauncher-Unsigned-CI.apk"
+          APK="$stage/artifacts/KiraziumLauncher-Unsigned-CI.apk"
+          test -s "$APK"
+          expected_hash="$(awk '/KiraziumLauncher-Unsigned-CI\.apk/ {print $1; exit}' "$stage/artifacts/SHA256SUMS.txt")"
+          actual_hash="$(sha256sum "$APK" | awk '{print $1}')"
+          test -n "$expected_hash"
+          test "$actual_hash" = "$expected_hash"
           mkdir -p unsigned out
-          cp "$stage/artifacts/KiraziumLauncher-Unsigned-CI.apk" unsigned/KiraziumLauncher-Unsigned-CI.apk
+          cp "$APK" unsigned/KiraziumLauncher-Unsigned-CI.apk
 
       - name: Set up JDK 17
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
