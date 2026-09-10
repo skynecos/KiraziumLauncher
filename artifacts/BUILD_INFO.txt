@@ -1,0 +1,8 @@
+source_commit=5f541a996b93b6165a967f936bd65c63b5b2d2b0
+source_branch=codex/embedded-ffmpeg-single-apk
+workflow=embedded-ffmpeg-single-apk
+ffmpeg_plugin_commit=5422b575f2402810ba9bfdc07c3f78bab98a15a2
+ffmpeg_kit_commit=97760a31349439243487a99adbcde09e9dabe458
+ffmpeg_ndk=25.1.8937393
+default_renderer=opengles2
+dreamdisplays_install=manual-stallfix1
