@@ -5,112 +5,37 @@ on:
     branches:
       - codex/final-cinema-build
     paths:
-      - ".github/workflows/import-exact-stallfix1-once.yml"
-  workflow_dispatch:
+      - .github/workflows/import-exact-stallfix1-once.yml
 
 permissions:
   contents: write
 
-env:
-  DREAM_JAR_SHA256: "918872694b9fe437b6c412dda287e717d33b654a1bf8885af0ceea0ed38caab1"
-  DREAM_JAR_SIZE: "23595235"
-  DREAM_JAR_URL: "https://raw.githubusercontent.com/skynecos/dreamdisplays/testoptimize-build/artifacts/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android-stallfix1.jar?token=CMHTPCZMTPSZMARX3RODWATKUIPJ3AA"
-
 jobs:
-  import-exact-stallfix1:
+  import:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
-      - name: Checkout final launcher branch
+      - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          fetch-depth: 1
 
-      - name: Download and verify exact stallfix1 JAR
+      - name: Download and verify exact DreamDisplays stallfix1
+        env:
+          DREAM_JAR_URL: https://raw.githubusercontent.com/skynecos/dreamdisplays/testoptimize-build/artifacts/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android-stallfix1.jar?token=CMHTPCZMTPSZMARX3RODWATKUIPJ3AA
         run: |
           set -euo pipefail
-          JAR="app_pojavlauncher/src/main/assets/kirazium/mods/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android-stallfix1.jar"
+          JAR=app_pojavlauncher/src/main/assets/kirazium/mods/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android-stallfix1.jar
           mkdir -p "$(dirname "$JAR")"
-          rm -f "$JAR"
-          curl --fail --location --retry 4 --retry-all-errors --connect-timeout 20 \
-            "$DREAM_JAR_URL" -o "$JAR"
-          test -s "$JAR"
-          test "$(stat -c%s "$JAR")" = "$DREAM_JAR_SIZE"
-          echo "$DREAM_JAR_SHA256  $JAR" | sha256sum -c -
+          curl -fL --retry 4 --connect-timeout 20 "$DREAM_JAR_URL" -o "$JAR"
+          test "$(stat -c%s "$JAR")" = 23595235
+          echo "918872694b9fe437b6c412dda287e717d33b654a1bf8885af0ceea0ed38caab1  $JAR" | sha256sum -c -
           unzip -tqq "$JAR"
 
-      - name: Convert embedded FFmpeg workflow to final cinema build
+      - name: Commit exact verified JAR
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path('.github/workflows/embedded-ffmpeg-single-apk.yml')
-          s = p.read_text()
-
-          def once(old, new):
-              global s
-              n = s.count(old)
-              if n != 1:
-                  raise SystemExit(f'Expected exactly one occurrence of {old!r}, found {n}')
-              s = s.replace(old, new, 1)
-
-          once('name: Kirazium Embedded FFmpeg Single APK', 'name: Kirazium FINAL Cinema Single APK')
-          once('      - codex/embedded-ffmpeg-single-apk\n', '      - codex/final-cinema-build\n')
-          once('git switch --orphan embedded-ffmpeg-single-apk-build', 'git switch --orphan final-cinema-single-apk-build')
-          once('HEAD:refs/heads/embedded-ffmpeg-single-apk-build', 'HEAD:refs/heads/final-cinema-single-apk-build')
-          once('source_branch=codex/embedded-ffmpeg-single-apk', 'source_branch=codex/final-cinema-build')
-          once('workflow=embedded-ffmpeg-single-apk', 'workflow=final-cinema-single-apk')
-          once(
-              'dreamdisplays_install=manual-stallfix1\\n',
-              'dreamdisplays_install=embedded-stallfix1-auto\\n'
-              'dreamdisplays_sha256=918872694b9fe437b6c412dda287e717d33b654a1bf8885af0ceea0ed38caab1\\n'
-              'dreamdisplays_size=23595235\\n'
-              'dreamdisplays_decode=software\\n'
-              'dreamdisplays_watchdog_android_ms=stall:15000,startup-progress:20000,startup-hard:45000\\n'
-          )
-          old_signed = 'KiraziumLauncher-SingleAPK-EmbeddedFFmpeg-SIGNED.apk'
-          if s.count(old_signed) < 2:
-              raise SystemExit('Expected signed APK filename in final workflow')
-          s = s.replace(old_signed, 'KiraziumLauncher-FINAL-Cinema-EmbeddedFFmpeg-Stallfix1-SIGNED.apk')
-
-          verify_anchor = '          test "$found_cinema_marker" = 1\n\n'
-          if s.count(verify_anchor) != 1:
-              raise SystemExit('Cinema marker verification anchor mismatch')
-          verify_block = '''          test "$found_cinema_marker" = 1
-
-          DREAM_ASSET="assets/kirazium/mods/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android-stallfix1.jar"
-          DREAM_VERIFY="verify/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android-stallfix1.jar"
-          unzip -p "$APK" "$DREAM_ASSET" > "$DREAM_VERIFY"
-          test "$(stat -c%s "$DREAM_VERIFY")" = "23595235"
-          echo "918872694b9fe437b6c412dda287e717d33b654a1bf8885af0ceea0ed38caab1  $DREAM_VERIFY" | sha256sum -c -
-
-'''
-          s = s.replace(verify_anchor, verify_block, 1)
-
-          diag_anchor = '      - name: Upload failure diagnostics\n        if: failure()\n'
-          if s.count(diag_anchor) != 1:
-              raise SystemExit('Diagnostics anchor mismatch')
-          s = s.replace(diag_anchor, diag_anchor + '        continue-on-error: true\n', 1)
-
-          p.write_text(s)
-          PY
-
-          grep -F 'codex/final-cinema-build' .github/workflows/embedded-ffmpeg-single-apk.yml >/dev/null
-          grep -F 'dreamdisplays_install=embedded-stallfix1-auto' .github/workflows/embedded-ffmpeg-single-apk.yml >/dev/null
-          grep -F 'dreamdisplays_decode=software' .github/workflows/embedded-ffmpeg-single-apk.yml >/dev/null
-          grep -F 'final-cinema-single-apk-build' .github/workflows/embedded-ffmpeg-single-apk.yml >/dev/null
-          grep -F '918872694b9fe437b6c412dda287e717d33b654a1bf8885af0ceea0ed38caab1' .github/workflows/embedded-ffmpeg-single-apk.yml >/dev/null
-
-      - name: Commit exact JAR and final workflow
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          JAR="app_pojavlauncher/src/main/assets/kirazium/mods/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android-stallfix1.jar"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add "$JAR" .github/workflows/embedded-ffmpeg-single-apk.yml
-          git rm .github/workflows/import-exact-stallfix1-once.yml
-          git commit -m 'final: embed exact DreamDisplays stallfix1 and arm cinema build'
+          JAR=app_pojavlauncher/src/main/assets/kirazium/mods/dreamdisplays-fabric-26.1.2-1.9.5-kirazium-android-stallfix1.jar
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add "$JAR"
+          git commit -m "final: embed exact verified DreamDisplays stallfix1"
           git push origin HEAD:codex/final-cinema-build
